@@ -138,7 +138,7 @@ train$Survived <- factor(train$Survived)
 
 ```
 
-## **Model Building**
+## **Model Training**
 Now that we have our key variables, let us train a few different models with the variables we identified above.  We will then compare the accuracy of these different models.  Namely, we will be comparing logistic regression, classification trees, and random forest methods.  
 
 In the code below, you will the code I use for generating these models.  
@@ -153,9 +153,6 @@ In the code below, you will the code I use for generating these models.
 set.seed(1431)
 
 tree <- tree(Survived~.,data=train)
-plot(tree)
-text(tree)
-
 prediction_tree <- predict(tree, train, type="class")  # predicted scores
 ```  
 
@@ -167,7 +164,6 @@ prediction_tree <- predict(tree, train, type="class")  # predicted scores
 
 ```{r look at logistic method}
 logistic <- glm(Survived~.,data=train,family='binomial')
-summary(logistic)
 
 prediction_logit <- predict(logistic, train, type="response")  # predicted scores
 
@@ -212,11 +208,16 @@ prediction_boost <- factor(prediction_boost)
 remove(temp)
 ```  
 
+## **Model Results**  
+
 Now that we have our models conditioned, lets compare the accuracy of our models.  We will compare our models on three key metrics:  
 
 1. Misclassification Rates
 2. Sensitivity
-3. Specificity
+3. Specificity  
+
+From the view below, it seems that our gradient boosted model has a slight edge over the random forest for the misclassification rate.  Given that this Kaggle competition is optimizing for misclassification error, we will use the gradient boosted model for submission to Kaggle.  
+
 
 ```{r generate summary metrics for models, include = FALSE}
 results <- data.frame(train,prediction_tree,prediction_logit,prediction_forest,prediction_boost)
