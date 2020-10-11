@@ -1,0 +1,115 @@
+---
+title: "Predicting Home Prices"
+subtitle: "Using a Gradient Boosted Model "
+output:
+  github_document:
+    fig_width: 10
+    fig_height: 6
+---
+
+```{r load packages and data, include = FALSE}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(gridExtra)
+library(gbm)
+options(dplyr.summarise.inform = FALSE)
+
+train <- read.csv("/Users/hanson377/Documents/GitHub/kaggle_projects/house_prices/data/train.csv")
+```   
+
+```{r write functions, include = FALSE}
+generate_boxplot <- function(data,factor_variable) {
+
+  factor_variable <- enquo(factor_variable)
+
+  ggplot(data, aes(x=!!factor_variable,y=SalePrice/1000)) + geom_boxplot() + ylab('Sale Price (thousands)')
+}
+
+generate_summary <- function(data, factor_variable) {
+
+  factor_variable <- enquo(factor_variable)
+
+  summary <- train %>% group_by(!!factor_variable) %>%summarise(sample_size = n(),mean = mean(SalePrice/1000), p10 = quantile(SalePrice/1000,.1), p25 = quantile(SalePrice/1000, .25), p50 = quantile(SalePrice/1000, .5), p75 = quantile(SalePrice/1000, .75), p90 = quantile(SalePrice/1000, .9)) %>% arrange(-sample_size)
+
+  return(summary)
+}
+```
+
+## **Objectives**  
+In this document, we will explore using a Gradient Boosted model for predicting home prices within the context of the class Kaggle competition dataset.  
+
+* * *  
+
+## **Exploratory Data Analysis**  
+
+* * *  
+
+Let us begin by looking at the distribution for the variable we are attempting to predict, SalePrice.  
+
+```{r sale price distribution, echo = FALSE, warning = FALSE}
+density <- ggplot(train, aes(x=SalePrice/1000)) + geom_density() + ggtitle('Density Plot of Sale Price') + ylab('Density') + xlab('Sale Price (thousands)')
+histo <- ggplot(train, aes(x=SalePrice/1000)) + geom_histogram() + ggtitle('Histogram of Sale Price') + ylab('Volume') + xlab('Sale Price (thousands)')
+grid.arrange(density,histo,nrow=1)
+
+summary <- train %>% summarise(mean = mean(SalePrice/1000), p10 = quantile(SalePrice/1000,.1), p25 = quantile(SalePrice/1000, .25), p50 = quantile(SalePrice/1000, .5), p75 = quantile(SalePrice/1000, .75), p90 = quantile(SalePrice/1000, .9))
+
+kable(summary, col.names = c('Mean', '10th Percentile', '25th', '50th', '75th', '90th'))
+```  
+
+* * *  
+
+## **Factor Variables**
+
+* * *
+
+Now that we have an understanding of our predictor variables distribution, let us move onto identifying which factor variables seem to have values significantly implacting our key variable.  To do this, we will cycle through a large number of boxplots and test for significance with simple ANOVA models.  
+
+Below, we will examine the following:  
+
+1. Location  
+2. Sales Condition   
+
+* * *
+
+## **Location**  
+
+
+Below, we examine Location's impact on Sales Price.  First, let us look at a simple boxplot.    
+
+```{r look at location, echo = FALSE}
+generate_boxplot(train,Neighborhood)
+summary <- generate_summary(train,Neighborhood)
+kable(summary, col.names = c('Factor Value','Sample Size','Mean', '10th Percentile', '25th', '50th', '75th', '90th'))
+
+anova <- aov(SalePrice ~ Neighborhood, data = train)
+anova
+```  
+
+* * *
+
+## **Sales Condition**  
+
+Now, we move on to examing Sales Condition's impact on Sales Price.  
+
+
+```{r look at sale condition,echo = FALSE}
+generate_boxplot(train,SaleCondition)
+summary <- generate_summary(train,SaleCondition)
+kable(summary, col.names = c('Factor Value','Sample Size','Mean', '10th Percentile', '25th', '50th', '75th', '90th'))
+
+anova <- aov(SalePrice ~ SaleCondition, data = train)
+anova
+```  
+
+From the above, we know a few things.  The simple boxplot seems to imply that 'Partial' and 'AdjLand' houses might be significantly different from the other condition types.  A post-hoc Tukey test seems to confirm.  Although our ANOVA model itself is not of significance, the Tukey HSD reveals that there exist significant differences between most conditions and the two types named above.
+
+As a result, we should generate binaries for these two types and incorporate them into our model.  However, it should be noted that houses with these conditions are rather small in volume, so we might not expect them to make a huge difference.  
+
+```{r create binaries from sales condition, include = FALSE}
+train$partial_binary <- ifelse(train$SaleCondition == 'Partial', 1, 0)
+train$adjland_binary <- ifelse(train$SaleCondition == 'AdjLand', 1, 0)
+
+ggplot(train, aes(x=SalePrice,colour=factor(partial_binary))) + geom_density()
+ggplot(train, aes(x=SalePrice,colour=factor(adjland_binary))) + geom_density()
+```   
