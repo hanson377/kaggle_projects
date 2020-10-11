@@ -78,22 +78,11 @@ at a simple boxplot.
 | NPkVill      |           9 | 142.69444 |        127.9000 | 140.0000 | 146.000 | 148.5000 | 149.8000 |
 | Blueste      |           2 | 137.50000 |        126.7000 | 130.7500 | 137.500 | 144.2500 | 148.3000 |
 
-    ## Call:
-    ##    aov(formula = SalePrice ~ Neighborhood, data = train)
-    ## 
-    ## Terms:
-    ##                 Neighborhood    Residuals
-    ## Sum of Squares  5.023606e+12 4.184305e+12
-    ## Deg. of Freedom           24         1435
-    ## 
-    ## Residual standard error: 53999
-    ## Estimated effects may be unbalanced
-
 -----
 
 ## **Sales Condition**
 
-Now, we move on to examing Sales Condition’s impact on Sales Price.
+Now, we move on to examining Sales Condition’s impact on Sales Price.
 
 ![](predicting_home_prices_files/figure-gfm/look%20at%20sale%20condition-1.png)<!-- -->
 
@@ -128,3 +117,179 @@ As a result, we should generate binaries for these two types and
 incorporate them into our model. However, it should be noted that houses
 with these conditions are rather small in volume, so we might not expect
 them to make a huge difference.
+
+-----
+
+## **Continuous Variables: Correlation**
+
+-----
+
+Now that we have a few factor variables to make a part of our model,
+lets now examine some correlations between some of our predictor
+variables and Sales Price.
+
+To get an initial look at some of our strongest correlations, we will
+product a correlation matrix containing the relationships between all of
+our numeric variables.
+
+Below, we can see that some of the most correlationed variables include:
+Living area, Garage area, Total Basement Square Footage, and First Floor
+Square Footed.
+
+``` r
+keep <- c('SalePrice','LotFrontage','LotArea','MasVnrArea','BsmtFinSF1','BsmtFinSF2','BsmtUnfSF','TotalBsmtSF','X1stFlrSF','X2ndFlrSF','LowQualFinSF','GrLivArea','GarageArea','WoodDeckSF','OpenPorchSF')
+
+scale_numeric <- data.frame(scale(na.omit(train[keep])))
+
+correlations <- scale_numeric %>% correlate() %>% focus(SalePrice)
+```
+
+    ## 
+    ## Correlation method: 'pearson'
+    ## Missing treated using: 'pairwise.complete.obs'
+
+``` r
+ggplot(correlations,aes(x=reorder(rowname,-SalePrice),y=SalePrice,fill=rowname)) + geom_bar(stat='identity') + xlab('Variable') + ylab('Pearson Correlation with Sale Price') + theme(legend.position='bottom',legend.title=element_blank()) + ggtitle("Pearson Correlations for Sale Price")
+```
+
+![](predicting_home_prices_files/figure-gfm/identify%20numerics-1.png)<!-- -->
+
+``` r
+ggplot(scale_numeric, aes(x=SalePrice,y=GrLivArea)) + geom_point()
+```
+
+![](predicting_home_prices_files/figure-gfm/individual%20relationships-1.png)<!-- -->
+
+``` r
+ggplot(scale_numeric, aes(x=SalePrice,y=GarageArea)) + geom_point()
+```
+
+![](predicting_home_prices_files/figure-gfm/individual%20relationships-2.png)<!-- -->
+
+``` r
+ggplot(scale_numeric, aes(x=SalePrice,y=TotalBsmtSF)) + geom_point()
+```
+
+![](predicting_home_prices_files/figure-gfm/individual%20relationships-3.png)<!-- -->
+
+``` r
+ggplot(scale_numeric, aes(x=SalePrice,y=X1stFlrSF)) + geom_point()
+```
+
+![](predicting_home_prices_files/figure-gfm/individual%20relationships-4.png)<!-- -->
+
+``` r
+ggplot(scale_numeric, aes(x=SalePrice,y=MasVnrArea)) + geom_point()
+```
+
+![](predicting_home_prices_files/figure-gfm/individual%20relationships-5.png)<!-- -->
+
+``` r
+ggplot(scale_numeric, aes(x=SalePrice,y=BsmtFinSF1)) + geom_point()
+```
+
+![](predicting_home_prices_files/figure-gfm/individual%20relationships-6.png)<!-- -->
+
+-----
+
+## **Condition Model**
+
+-----
+
+We will now train a model with the variables we identified as helpful
+above. We will also generate a simple OLS model for comparison purposes
+to ensure that the gradient boosted model is superior.
+
+``` r
+set.seed(1)
+
+keep <- c('SalePrice','GrLivArea','GarageArea','TotalBsmtSF','X1stFlrSF','MasVnrArea','BsmtFinSF1','Neighborhood')
+
+final <- train[keep]
+
+model1 <- gbm(SalePrice~GrLivArea+GarageArea+TotalBsmtSF+X1stFlrSF+MasVnrArea+BsmtFinSF1,data=final, distribution="gaussian",n.trees=5000, interaction.depth=4)
+summary(model1)
+```
+
+![](predicting_home_prices_files/figure-gfm/run%20model-1.png)<!-- -->
+
+    ##                     var   rel.inf
+    ## GrLivArea     GrLivArea 31.387799
+    ## TotalBsmtSF TotalBsmtSF 20.438242
+    ## GarageArea   GarageArea 19.697099
+    ## BsmtFinSF1   BsmtFinSF1 12.169876
+    ## X1stFlrSF     X1stFlrSF  8.815345
+    ## MasVnrArea   MasVnrArea  7.491638
+
+``` r
+simple_linear <- lm(SalePrice~GrLivArea+GarageArea+TotalBsmtSF+X1stFlrSF+MasVnrArea+BsmtFinSF1,data=final)
+summary(simple_linear)
+```
+
+    ## 
+    ## Call:
+    ## lm(formula = SalePrice ~ GrLivArea + GarageArea + TotalBsmtSF + 
+    ##     X1stFlrSF + MasVnrArea + BsmtFinSF1, data = final)
+    ## 
+    ## Residuals:
+    ##     Min      1Q  Median      3Q     Max 
+    ## -682145  -19342     562   18786  268450 
+    ## 
+    ## Coefficients:
+    ##               Estimate Std. Error t value Pr(>|t|)    
+    ## (Intercept) -12495.612   4320.557  -2.892  0.00388 ** 
+    ## GrLivArea       66.973      2.909  23.022  < 2e-16 ***
+    ## GarageArea      92.596      6.783  13.652  < 2e-16 ***
+    ## TotalBsmtSF     42.121      5.004   8.417  < 2e-16 ***
+    ## X1stFlrSF       -6.948      5.789  -1.200  0.23032    
+    ## MasVnrArea      50.772      7.419   6.844 1.14e-11 ***
+    ## BsmtFinSF1      14.228      3.065   4.642 3.77e-06 ***
+    ## ---
+    ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+    ## 
+    ## Residual standard error: 44950 on 1445 degrees of freedom
+    ##   (8 observations deleted due to missingness)
+    ## Multiple R-squared:  0.6799, Adjusted R-squared:  0.6785 
+    ## F-statistic: 511.5 on 6 and 1445 DF,  p-value: < 2.2e-16
+
+We now generate some predictions and visualize them against the actual
+observed values.
+
+``` r
+## generate predictions
+final$pred_boost=predict(model1,newdata=final,n.trees=5000)
+final$pred_ols=predict(simple_linear,newdata=final,n.trees=5000)
+
+## view predicted versual actual
+ggplot(final, aes(x=pred_boost/1000,y=SalePrice/1000)) + geom_point() + xlab('Predicted Sale Price') + ylab('Sale Price from Training Data') + coord_cartesian(xlim=c(0,600),ylim=c(0,600)) + geom_abline(intercept = 0, slope = 1, linetype='dashed',colour='red')
+```
+
+![](predicting_home_prices_files/figure-gfm/generate%20preds-1.png)<!-- -->
+
+``` r
+ggplot(final, aes(x=pred_ols/1000,y=SalePrice/1000)) + geom_point() + xlab('Predicted Sale Price') + ylab('Sale Price from Training Data') + coord_cartesian(xlim=c(0,600),ylim=c(0,600)) + geom_abline(intercept = 0, slope = 1, linetype='dashed',colour='red')
+```
+
+    ## Warning: Removed 8 rows containing missing values (geom_point).
+
+![](predicting_home_prices_files/figure-gfm/generate%20preds-2.png)<!-- -->
+
+It is pretty clear from the above that the boosted model is far superior
+to the simple ols model. However, we can quantify this by calculating
+and comparing the mean squared error for both models.
+
+When do we do this, we see that the mean squared error is decreased by
+nearly 100% with the boosted model.
+
+``` r
+## calculate mean squared error
+mse2_boost <- mean((final$pred_boost - final$SalePrice)^2,na.rm=TRUE)
+mse2_ols <- mean((final$pred_ols - final$SalePrice)^2,na.rm=TRUE)
+delta <- ((mse2_boost/mse2_ols)-1)*100
+```
+
+Boosted Model: 3.784064110^{7}
+
+OLS Model: 2.011014510^{9}
+
+% Delta: -98.1183308

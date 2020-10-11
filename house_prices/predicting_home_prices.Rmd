@@ -11,8 +11,10 @@ output:
 library(dplyr)
 library(ggplot2)
 library(knitr)
+library(corrplot)
 library(gridExtra)
 library(gbm)
+library(corrr)
 options(dplyr.summarise.inform = FALSE)
 
 train <- read.csv("/Users/hanson377/Documents/GitHub/kaggle_projects/house_prices/data/train.csv")
@@ -83,15 +85,13 @@ summary <- generate_summary(train,Neighborhood)
 kable(summary, col.names = c('Factor Value','Sample Size','Mean', '10th Percentile', '25th', '50th', '75th', '90th'))
 
 anova <- aov(SalePrice ~ Neighborhood, data = train)
-anova
 ```  
 
 * * *
 
 ## **Sales Condition**  
 
-Now, we move on to examing Sales Condition's impact on Sales Price.  
-
+Now, we move on to examining Sales Condition's impact on Sales Price.  
 
 ```{r look at sale condition,echo = FALSE}
 generate_boxplot(train,SaleCondition)
@@ -113,3 +113,88 @@ train$adjland_binary <- ifelse(train$SaleCondition == 'AdjLand', 1, 0)
 ggplot(train, aes(x=SalePrice,colour=factor(partial_binary))) + geom_density()
 ggplot(train, aes(x=SalePrice,colour=factor(adjland_binary))) + geom_density()
 ```   
+
+* * *  
+
+## **Continuous Variables: Correlation**
+
+* * *   
+
+Now that we have a few factor variables to make a part of our model, lets now examine some correlations between some of our predictor variables and Sales Price.  
+
+To get an initial look at some of our strongest correlations, we will product a correlation matrix containing the relationships between all of our numeric variables.  
+
+Below, we can see that some of the most correlationed variables include: Living area, Garage area, Total Basement Square Footage, and First Floor Square Footed.  
+
+```{r identify numerics}
+keep <- c('SalePrice','LotFrontage','LotArea','MasVnrArea','BsmtFinSF1','BsmtFinSF2','BsmtUnfSF','TotalBsmtSF','X1stFlrSF','X2ndFlrSF','LowQualFinSF','GrLivArea','GarageArea','WoodDeckSF','OpenPorchSF')
+
+scale_numeric <- data.frame(scale(na.omit(train[keep])))
+
+correlations <- scale_numeric %>% correlate() %>% focus(SalePrice)
+
+ggplot(correlations,aes(x=reorder(rowname,-SalePrice),y=SalePrice,fill=rowname)) + geom_bar(stat='identity') + xlab('Variable') + ylab('Pearson Correlation with Sale Price') + theme(legend.position='bottom',legend.title=element_blank()) + ggtitle("Pearson Correlations for Sale Price")
+```
+
+
+```{r individual relationships}
+ggplot(scale_numeric, aes(x=SalePrice,y=GrLivArea)) + geom_point()
+ggplot(scale_numeric, aes(x=SalePrice,y=GarageArea)) + geom_point()
+ggplot(scale_numeric, aes(x=SalePrice,y=TotalBsmtSF)) + geom_point()
+ggplot(scale_numeric, aes(x=SalePrice,y=X1stFlrSF)) + geom_point()
+ggplot(scale_numeric, aes(x=SalePrice,y=MasVnrArea)) + geom_point()
+ggplot(scale_numeric, aes(x=SalePrice,y=BsmtFinSF1)) + geom_point()
+```  
+
+* * *   
+
+## **Condition Model**  
+
+* * *
+
+We will now train a model with the variables we identified as helpful above.  We will also generate a simple OLS model for comparison purposes to ensure that the gradient boosted model is superior.  
+
+
+```{r run model }
+set.seed(1)
+
+keep <- c('SalePrice','GrLivArea','GarageArea','TotalBsmtSF','X1stFlrSF','MasVnrArea','BsmtFinSF1','Neighborhood')
+
+final <- train[keep]
+
+model1 <- gbm(SalePrice~GrLivArea+GarageArea+TotalBsmtSF+X1stFlrSF+MasVnrArea+BsmtFinSF1,data=final, distribution="gaussian",n.trees=5000, interaction.depth=4)
+summary(model1)
+
+simple_linear <- lm(SalePrice~GrLivArea+GarageArea+TotalBsmtSF+X1stFlrSF+MasVnrArea+BsmtFinSF1,data=final)
+summary(simple_linear)
+```  
+
+We now generate some predictions and visualize them against the actual observed values.
+
+```{r generate preds}
+## generate predictions
+final$pred_boost=predict(model1,newdata=final,n.trees=5000)
+final$pred_ols=predict(simple_linear,newdata=final,n.trees=5000)
+
+## view predicted versual actual
+ggplot(final, aes(x=pred_boost/1000,y=SalePrice/1000)) + geom_point() + xlab('Predicted Sale Price') + ylab('Sale Price from Training Data') + coord_cartesian(xlim=c(0,600),ylim=c(0,600)) + geom_abline(intercept = 0, slope = 1, linetype='dashed',colour='red')
+
+ggplot(final, aes(x=pred_ols/1000,y=SalePrice/1000)) + geom_point() + xlab('Predicted Sale Price') + ylab('Sale Price from Training Data') + coord_cartesian(xlim=c(0,600),ylim=c(0,600)) + geom_abline(intercept = 0, slope = 1, linetype='dashed',colour='red')
+```  
+
+It is pretty clear from the above that the boosted model is far superior to the simple ols model.  However, we can quantify this by calculating and comparing the mean squared error for both models.  
+
+When do we do this, we see that the mean squared error is decreased by nearly 100% with the boosted model.  
+
+```{r thing}
+## calculate mean squared error
+mse2_boost <- mean((final$pred_boost - final$SalePrice)^2,na.rm=TRUE)
+mse2_ols <- mean((final$pred_ols - final$SalePrice)^2,na.rm=TRUE)
+delta <- paste(round(((mse2_boost/mse2_ols)-1)*100,digits=2),'%',sep='')
+```
+
+Boosted Model: `r mse2_boost`  
+
+OLS Model: `r mse2_ols`  
+
+% Delta: `r delta`
