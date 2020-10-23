@@ -1,0 +1,35 @@
+=---
+title: "Predicting Home Prices"
+subtitle: "Using a Gradient Boosted Model "
+output:
+  github_document:
+    fig_width: 10
+    fig_height: 6
+---
+
+```{r load packages and data, include = FALSE}
+library(dplyr)
+options(dplyr.summarise.inform = FALSE)
+
+library(ggplot2)
+library(knitr)
+library(lubridate)
+library(corrplot)
+library(gridExtra)
+library(gbm)
+library(xgboost)
+library(corrr)
+
+
+sales_train <- read.csv("/Users/hanson377/Documents/GitHub/kaggle_projects/future_sales/sales_train.csv")
+```
+
+## **Exploratory Data Analysis**  
+First, let us understand our data a bit.  
+
+```{r yes}
+
+```
+## **Model Building**  
+
+## **Model Assessment**

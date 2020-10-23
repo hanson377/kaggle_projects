@@ -14,7 +14,9 @@ library(knitr)
 library(corrplot)
 library(gridExtra)
 library(gbm)
+library(xgboost)
 library(corrr)
+
 options(dplyr.summarise.inform = FALSE)
 
 train <- read.csv("/Users/hanson377/Documents/GitHub/kaggle_projects/house_prices/data/train.csv")
