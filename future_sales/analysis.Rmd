@@ -22,14 +22,205 @@ library(corrr)
 
 
 sales_train <- read.csv("/Users/hanson377/Documents/GitHub/kaggle_projects/future_sales/sales_train.csv")
+sales_train$date <- gsub('[.]','-',sales_train$date)
+sales_train$date <- dmy(sales_train$date)
+
+sales_train$month <- month(sales_train$date)
+sales_train$year <- year(sales_train$date)
+sales_train$wday <- wday(sales_train$date)
+sales_train$day <- day(sales_train$date)
+
+sales_train$month_year <- paste(sales_train$year,'-',sales_train$month,'-01',sep='')
+sales_train$month_year <- as.Date(sales_train$month_year)
+```  
+
+```{r create daily skeleton}
+## here, we want to create a daily skeleton for every item and store id combo we've ever seen
+## this will allow us to properly calculate lagging totals for an arima based model
+days <- data.frame(date=unique(sales_train$date))
+days$binary <- 1
+days$year <- year(days$date)
+days$month <- month(days$date)
+
+
+days2013_1 <- subset(days,year==2013 & month <= 6)
+days2013_2 <- subset(days,year==2013 & month > 6)
+
+days2014_1 <- subset(days,year==2014 & month <= 6)
+days2014_2 <- subset(days,year==2014 & month > 6)
+
+days2015_1 <- subset(days,year==2015 & month <= 6)
+days2015_2 <- subset(days,year==2015 & month > 6)
+##
+items_by_store <- sales_train %>% select(item_id,shop_id,date) %>% group_by(item_id,shop_id) %>% summarise(min_date = min(date)) %>% mutate(binary = 1) %>% mutate(year = year(min_date),month = month(min_date))
+
+items2013_1 <- subset(items_by_store,year==2013 & month <= 6)
+items2013_2 <- subset(items_by_store,year==2013 & month > 6)
+
+items2014_1 <- subset(items_by_store,year==2014 & month <= 6)
+items2014_2 <- subset(items_by_store,year==2014 & month > 6)
+
+items2015_1 <- subset(items_by_store,year==2015 & month <= 6)
+items2015_2 <- subset(items_by_store,year==2015 & month > 6)
+
+rm(items_by_store)
+
+## attempt
+
+skeleton2013_1 <- days2013_1 %>% inner_join(items2013_1,by='binary') %>% filter(date >= min_date)
+skeleton2013_2 <- days2013_2 %>% inner_join(items2013_2,by='binary') %>% filter(date >= min_date)
+
+rm(days2013_1,days2013_2,items2013_1,items2013_2)
+
+##
+skeleton2014_1 <- days2014_1 %>% inner_join(items2014_1,by='binary') %>% filter(date >= min_date)
+skeleton2014_2 <- days2014_2 %>% inner_join(items2014_2,by='binary') %>% filter(date >= min_date)
+
+rm(days2014_1,days2014_2,items2014_1,items2014_2)
+
+##
+skeleton2015_1 <- days2015_1 %>% inner_join(items2015_1,by='binary') %>% filter(date >= min_date)
+skeleton2015_2 <- days2015_2 %>% inner_join(items2015_2,by='binary') %>% filter(date >= min_date)
+
+rm(days2015_1,days2015_2,items2015_1,items2015_2)
+##
+
+## sales training day by year joined onto the skeletons
+sales2013_1 <- subset(sales_train,year==2013 & month <= 6)
+sales2013_2 <- subset(sales_train,year==2013 & month > 6)
+
+daily2013_1 <- skeleton2013_1 %>% left_join(sales2013_1,by=c('item_id','shop_id','date'))
+daily2013_2 <- skeleton2013_2 %>% left_join(sales2013_2,by=c('item_id','shop_id','date'))
+
+rm(sales2013_1,sales2013_2,skeleton2013_1,skeleton2013_2)
+
+##
+sales2014_1 <- subset(sales_train,year==2014 & month <= 6)
+sales2014_2 <- subset(sales_train,year==2014 & month > 6)
+
+daily2014_1 <- skeleton2014_1 %>% left_join(sales2014_1,by=c('item_id','shop_id','date'))
+daily2014_2 <- skeleton2014_2 %>% left_join(sales2014_2,by=c('item_id','shop_id','date'))
+
+rm(sales2014_1,sales2014_2,skeleton2014_1,skeleton2014_2)
+
+##
+sales2015_1 <- subset(sales_train,year==2015 & month <= 6)
+sales2015_2 <- subset(sales_train,year==2015 & month > 6)
+
+daily2015_1 <- skeleton2015_1 %>% left_join(sales2015_1,by=c('item_id','shop_id','date'))
+daily2015_2 <- skeleton2015_2 %>% left_join(sales2015_2,by=c('item_id','shop_id','date'))
+
+rm(sales2015_1,sales2015_2,skeleton2015_1,skeleton2015_2)
+
+daily_data <- rbind(daily2013_1,daily2013_2)
+rm(daily2013_1,daily2013_2)
+
+daily_data <- rbind(daily_data,daily2014_1,daily2014_2)
+rm(daily2014_1,daily2014_2)
+
+daily_data <- rbind(daily_data,daily2015_1,daily2015_2)
+rm(daily2015_1,daily2015_2)
+
+daily_data <- daily_data %>% select(date,item_id,shop_id,min_date,item_price,item_cnt_day)
 ```
 
 ## **Exploratory Data Analysis**  
-First, let us understand our data a bit.  
+First, let us understand our data a bit.  How many unique shops and objects are we predicting for?
 
 ```{r yes}
-
+summary <- sales_train %>% summarise(items = n_distinct(item_id),shops = n_distinct(shop_id))
+ggplot(summary,aes())
 ```
+
+```{r time series}
+summary <- sales_train %>% group_by(date) %>% summarise(items = n_distinct(item_id),shops = n_distinct(shop_id), items_sold = sum(item_cnt_day))  
+ggplot(summary,aes(x=as.Date(date),y=items,group=1)) + geom_line(stat='identity')
+ggplot(summary,aes(x=as.Date(date),y=shops,group=1)) + geom_line(stat='identity')
+
+## great variation in the number of items and shop across time
+## items drops substantially
+```
+
+```{r items sold by day}
+summary <- sales_train %>% group_by(date,shop_id) %>% summarise(items_sold = sum(item_cnt_day))  
+
+ggplot(summary,aes(x=as.Date(date),y=items_sold,colour=factor(shop_id))) + geom_bar(stat='identity',position='stack') + theme(legend.position='none',legend.title=element_blank())
+
+summary <- sales_train %>% group_by(date,item_id) %>% summarise(items_sold = sum(item_cnt_day))  
+
+ggplot(summary,aes(x=as.Date(date),y=items_sold,colour=factor(item_id))) + geom_bar(stat='identity',position='stack') + theme(legend.position='none',legend.title=element_blank())
+```
+
+```{r items sold by month}
+summary <- sales_train %>% group_by(month,item_id) %>% summarise(items_sold = sum(item_cnt_day))  
+
+ggplot(summary,aes(x=factor(month),y=items_sold,colour=factor(item_id))) + geom_bar(stat='identity',position='stack') + theme(legend.position='none',legend.title=element_blank())
+```
+
+```{r items sold by month and year}
+summary <- sales_train %>% group_by(month_year,item_id) %>% summarise(items_sold = sum(item_cnt_day))  
+
+ggplot(summary,aes(x=month_year,y=items_sold,colour=factor(item_id))) + geom_bar(stat='identity',position='stack') + theme(legend.position='none',legend.title=element_blank())
+```
+
+```{r items sold by year}
+summary <- sales_train %>% group_by(year,item_id) %>% summarise(items_sold = sum(item_cnt_day))  
+
+ggplot(summary,aes(x=factor(year),y=items_sold,colour=factor(item_id))) + geom_bar(stat='identity',position='stack') + theme(legend.position='none',legend.title=element_blank())
+```  
+
+```{r items sold by weekday}
+summary <- sales_train %>% group_by(wday,item_id) %>% summarise(items_sold = sum(item_cnt_day))  
+
+ggplot(summary,aes(x=factor(wday),y=items_sold,colour=factor(item_id))) + geom_bar(stat='identity',position='stack') + theme(legend.position='none',legend.title=element_blank())
+```
+
+```{r study impact of discounts on sales volume}
+monthly_median <- sales_train %>% group_by(item_id,month_year) %>% summarise(median_price = median(item_price))
+sales_train <- sales_train %>% left_join(monthly_median,by=c('item_id','month_year'))
+
+sales_train <- sales_train %>% arrange(date) %>% group_by(item_id) %>% mutate(sales_status = case_when(item_price < median_price ~ 1,
+                                                                                                       item_price > median_price ~ 0,
+                                                                                                       item_price == median_price ~ 0,
+                                                                                                       row_number() == 1 ~ 0), ## mark first cases of an item as zeroes
+                                                                                                       perc_discount = (item_price/median_price)-1,
+                                                                                                       perc_sales_diff = (item_cnt_day/lag(item_cnt_day))-1,
+                                                                                                       amount_diff = item_cnt_day-lag(item_cnt_day))
+
+discounts <- sales_train %>% filter(sales_status == 1)
+test <- sales_train %>% filter(item_id == 21771)
+discounts %>% filter(perc_sales_diff > 0) %>% ggplot(aes(x=log10(-perc_discount),y=log10(perc_sales_diff))) + geom_point() + coord_cartesian(xlim=c(0,1),ylim=c(0,1))
+```
+
+```{r study impact of days since last item purchased}
+sales_train <- sales_train %>% arrange(date) %>% group_by(item_id,shop_id) %>% mutate(days_since_last_purchase = difftime(date,lag(date),'days'))
+```
+
 ## **Model Building**  
+Build model
+
+
+```{r simply econometric model}
+sales_train <- sales_train %>% group_by(item_id,shop_id) %>% mutate(lagging_daily_count = lag(item_cnt_day))
+
+## create lagging monthly variable
+lagging_monthly <- sales_train %>% arrange(month_year) %>% group_by(item_id,shop_id,month_year) %>% summarise(total_items = sum(item_cnt_day))
+lagging_monthly <- lagging_monthly %>% arrange(month_year) %>% group_by(item_id,shop_id) %>% mutate(monthly_lag_count = coalesce(lag(total_items),0))
+
+## create daily lagging variable
+lagging_daily <- sales_train %>% arrange(date) %>% group_by(item_id,shop_id,date) %>% summarise(total_items = sum(item_cnt_day))
+lagging_daily <- lagging_daily %>% arrange(date) %>% group_by(item_id,shop_id) %>% mutate(daily_lag_count = coalesce(lag(total_items),0))
+
+## rolling 7 day lag
+lagging_daily <- sales_train %>% arrange(date) %>% group_by(item_id,shop_id,date) %>% summarise(total_items = sum(item_cnt_day))
+lagging_daily <- lagging_daily %>% arrange(date) %>% group_by(item_id,shop_id) %>% mutate(daily_lag_count = coalesce(lag(total_items,6),0))
+
+
+sales_train <- sales_train %>% left_join(lagging_monthly,by=c('item_id','shop_id','month_year'))
+sales_train <- sales_train %>% left_join(lagging_daily,by=c('item_id','shop_id','date'))
+
+
+m1 <- lm(item_cnt_day ~ monthly_lag_count+daily_lag_count+rolling_7day_lag+shop_id*month+shop_id*wday+shop_id*year+item_id*month+item_id*wday+item_id*year+sales_status*perc_discount,data=sales_train)
+```
 
 ## **Model Assessment**
