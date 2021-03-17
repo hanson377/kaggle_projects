@@ -1,0 +1,555 @@
+---
+title: 'Mens BB'
+author: Josh Hanson
+output: github_document
+---
+
+```{r packages}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+```
+
+```{r data}
+seeds <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MNCAATourneySeeds.csv')
+
+tourney_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MNCAATourneyCompactResults.csv')
+detailed_tourney_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MNCAATourneyDetailedResults.csv')
+
+season_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MRegularSeasonCompactResults.csv')
+detailed_season_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MRegularSeasonDetailedResults.csv')
+
+teams <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MTeams.csv')
+```
+
+
+## Idea for Modeling  
+
+## Exploration of Model
+
+
+```{r season summaries for models}
+wins <- detailed_season_results %>% select(Season,DayNum,TeamID = WTeamID, OpposingTeamID = LTeamID, FGM = WFGM, FGA = WFGA,OppFGM = LFGM, OppFGA = LFGA, FGM3 = WFGM3, FGA3 = WFGA3, OppFGM3 = LFGM3, OppFGA3 = LFGA3, FTM = WFTM, FTA = WFTA, OppFTM = LFTM, OppFTA = LFTA) %>% mutate(status = 'won')
+
+losses <- detailed_season_results %>% select(Season,DayNum,TeamID = LTeamID, OpposingTeamID = WTeamID,FGM = LFGM, FGA = LFGA, OppFGM = WFGM, OppFGA = WFGA, FGM3 = LFGM3, FGA3 = LFGA3, OppFGM3 = WFGM3, OppFGA3 = WFGA3, FTM = LFTM, FTA = LFTA, OppFTM = WFTM, OppFTA = WFTA) %>% mutate(status = 'lost')
+
+games <- rbind(wins,losses)
+games$diffFG <- (games$FGM-games$OppFGM)
+games$diffFG2 <- (games$FGM-games$FGM3)-(games$OppFGM-games$OppFGM3)
+games$diffFG3 <- (games$FGM3-games$OppFGM3)
+games$diffFT <- (games$FTM-games$OppFTM)
+
+games$diffPoints <- (games$diffFG2*2)+(games$diffFG3*2)+(games$diffFT*1)
+
+summary <- games %>% group_by(TeamID,Season) %>% summarise(total_games = n(), FGM = sum(FGM), FGA = sum(FGA), OppFGM = sum(OppFGM), OppFGA = sum(OppFGA), FGM3 = sum(FGM3), FGA3 = sum(FGA3), OppFGM3 = sum(OppFGM3), OppFGA3 = sum(OppFGA3), FTM = sum(FTM), FTA = sum(FTA), OppFTM = sum(OppFTM), OppFTA = sum(OppFTA), meanDiffPoints = mean(diffPoints), sdDiffPoints = sd(diffPoints))
+
+```
+
+
+```{r kansas model}
+kansas2008 <- summary %>% filter(Season == 2008 & TeamID == 1242)
+kentucky2008 <- summary %>% filter(Season == 2008 & TeamID == 1246)
+memphis2008 <- summary %>% filter(Season == 2008 & TeamID == 1272)
+davidson2008 <- summary %>% filter(Season == 2008 & TeamID == 1172)
+georgetown2008 <- summary %>% filter(Season == 2008 & TeamID == 1207)
+wisconsin2008 <- summary %>% filter(Season == 2008 & TeamID == 1458)
+kstate2008 <- summary %>% filter(Season == 2008 & TeamID == 1243)
+texas2008 <- summary %>% filter(Season == 2008 & TeamID == 1400)
+duke2008 <- summary %>% filter(Season == 2008 & TeamID == 1181)
+western_kentucky2008 <- summary %>% filter(Season == 2008 & TeamID == 1443)
+drake2008 <- summary %>% filter(Season == 2008 & TeamID == 1179)
+sandiego2008 <- summary %>% filter(Season == 2008 & TeamID == 1360)
+ucla2008 <- summary %>% filter(Season == 2008 & TeamID == 1417)
+westvirgina2008 <- summary %>% filter(Season == 2008 & TeamID == 1452)
+
+totalPoints <- function(data) {
+
+ FGM <- sum(data$FGM)
+ FGM3 <- sum(data$FGM3)
+ FGM2 <- FGM-FGM3
+
+ FTM <- sum(data$FTM)
+
+ games <- max(data$total_games)
+
+ meanDiff <- max(data$meanDiffPoints)
+ sdDiff <- max(data$sdDiffPoints)
+
+ trials <- 1000000
+
+ model <- data.frame(FGM3 = rgamma(trials,FGM3,games), FGM2 = rgamma(trials,FGM2,games), FTM = rgamma(trials,FTM, games), pointDiff = rnorm(1000000,meanDiff,sdDiff))
+ model$points <- (model$FGM3*3)+(model$FGM2*2)+(model$FTM*1)
+
+ return(model)
+}
+
+kansas <- totalPoints(kansas2008) %>% mutate(team = 'kansas')
+kentucky <- totalPoints(kentucky2008) %>% mutate(team = 'kentucky')
+memphis <- totalPoints(memphis2008) %>% mutate(team = 'memphis')
+davidson <- totalPoints(davidson2008) %>% mutate(team = 'davidson')
+georgetown <- totalPoints(georgetown2008) %>% mutate(team = 'georgetown')
+wisconsin <- totalPoints(wisconsin2008) %>% mutate(team = 'wisconsin')
+kstate <- totalPoints(kstate2008) %>% mutate(team = 'kstate')
+texas <- totalPoints(texas2008) %>% mutate(team = 'texas')
+duke <- totalPoints(duke2008) %>% mutate(team = 'duke')
+western_kentucky <- totalPoints(western_kentucky2008) %>% mutate(team = 'western kentucky')
+drake <- totalPoints(drake2008) %>% mutate(team = 'drake')
+sandiego <- totalPoints(sandiego2008) %>% mutate(team = 'san diego')
+ucla <- totalPoints(ucla2008) %>% mutate(team = 'ucla')
+westvirgina <- totalPoints(westvirgina2008) %>% mutate(team = 'west virginia')
+
+## notice although wisconsin did great in 2008, theyd do poorly with this model. must figure out how to account for defense
+
+results <- rbind(kansas,kentucky,memphis,davidson,georgetown,wisconsin,kstate,texas,duke,western_kentucky,drake,sandiego,ucla,westvirgina)
+
+## create some test dataframes
+test <- data.frame(kansas = kansas$points, memphis = memphis$points, davidson = davidson$points, kentucky = kentucky$points, georgetown = georgetown$points, texas = texas$points, wisconsin = wisconsin$points, davidson = davidson$points, kstate = kstate$points, duke = duke$points, western_kentucky = western_kentucky$points, drake = drake$points,sandiego = sandiego$points, ucla = ucla$points, westvirgina = westvirgina$points)
+
+test2 <- data.frame(kansas = kansas$pointDiff, memphis = memphis$pointDiff, davidson = davidson$pointDiff, kentucky = kentucky$pointDiff, georgetown = georgetown$pointDiff, texas = texas$pointDiff, wisconsin = wisconsin$pointDiff, davidson = davidson$pointDiff, kstate = kstate$pointDiff, duke = duke$pointDiff, western_kentucky = western_kentucky$pointDiff, drake = drake$pointDiff, sandiego = sandiego$pointDiff, ucla = ucla$pointDiff, westvirgina = westvirgina$pointDiff)
+
+```
+```{r look at top teams}
+ggplot(results,aes(x=points,fill=team)) + geom_density(alpha=0.2)
+ggplot(results,aes(x=pointDiff,fill=team)) + geom_density(alpha=0.2)
+```
+
+```{r drake vs wku}
+## kstate and wisconsin
+sum(test2$drake >= test2$western_kentucky)/1000000
+ggplot(test2) + geom_density(aes(x=drake),colour='red') + geom_density(aes(x=western_kentucky),colour='purple')
+
+sum(test$drake >= test$western_kentucky)/1000000
+ggplot(test) + geom_density(aes(x=drake),colour='red') + geom_density(aes(x=western_kentucky),colour='purple')
+
+```
+
+```{r wku vs ucla}
+sum(test2$ucla >= test2$western_kentucky)/1000000
+ggplot(test2) + geom_density(aes(x=ucla),colour='red') + geom_density(aes(x=western_kentucky),colour='purple')
+
+sum(test$ucla >= test$western_kentucky)/1000000
+ggplot(test) + geom_density(aes(x=ucla),colour='red') + geom_density(aes(x=western_kentucky),colour='purple')
+
+```
+
+```{r duke wvu}
+sum(test2$duke >= test2$westvirgina)/1000000
+ggplot(test2) + geom_density(aes(x=duke),colour='red') + geom_density(aes(x=westvirgina),colour='purple')
+
+sum(test$duke >= test$westvirgina)/1000000
+ggplot(test) + geom_density(aes(x=duke),colour='red') + geom_density(aes(x=westvirgina),colour='purple')
+
+```
+
+```{r san diego vs wku}
+## kstate and wisconsin
+sum(test2$sandiego >= test2$western_kentucky)/1000000
+ggplot(test2) + geom_density(aes(x=sandiego),colour='red') + geom_density(aes(x=western_kentucky),colour='purple')
+
+sum(test$sandiego >= test$western_kentucky)/1000000
+ggplot(test) + geom_density(aes(x=sandiego),colour='red') + geom_density(aes(x=western_kentucky),colour='purple')
+
+```
+
+```{r kansass vs memphis}
+sum(test$kansas >= test$memphis)/1000000
+ggplot(test) + geom_density(aes(x=kansas),colour='blue') + geom_density(aes(x=memphis),colour='red')
+
+sum(test2$kansas >= test2$memphis)/1000000
+ggplot(test2) + geom_density(aes(x=kansas),colour='blue') + geom_density(aes(x=memphis),colour='red')
+```
+
+```{r kansass vs davidson}
+sum(test$kansas >= test$davidson)/1000000
+ggplot(test) + geom_density(aes(x=kansas),colour='blue') + geom_density(aes(x=davidson),colour='red')
+
+sum(test2$kansas >= test2$davidson)/1000000
+ggplot(test2) + geom_density(aes(x=kansas),colour='blue') + geom_density(aes(x=davidson),colour='red')
+```
+
+```{r georgetown and davidson}
+sum(test2$georgetown >= test2$davidson)/1000000
+ggplot(test2) + geom_density(aes(x=georgetown)) + geom_density(aes(x=davidson))
+
+sum(test$georgetown >= test$davidson)/1000000
+ggplot(test) + geom_density(aes(x=georgetown)) + geom_density(aes(x=davidson))
+
+```
+
+```{r texas and memphis}
+sum(test2$texas >= test2$memphis)/1000000
+ggplot(test2) + geom_density(aes(x=texas),colour='orange') + geom_density(aes(x=memphis),colour='blue')
+
+sum(test$texas >= test$memphis)/1000000
+ggplot(test) + geom_density(aes(x=texas),colour='orange') + geom_density(aes(x=memphis),colour='blue')
+```
+
+```{r wisconsin and davidson}
+## wisconsiun and davidson
+sum(test2$wisconsin >= test2$davidson)/1000000
+ggplot(test2) + geom_density(aes(x=wisconsin),colour='grey') + geom_density(aes(x=davidson),colour='red')
+
+sum(test$wisconsin >= test$davidson)/1000000
+ggplot(test) + geom_density(aes(x=wisconsin),colour='grey') + geom_density(aes(x=davidson),colour='red')
+```
+
+```{r kstate and wisconsin}
+## kstate and wisconsin
+sum(test2$wisconsin >= test2$kstate)/1000000
+ggplot(test2) + geom_density(aes(x=wisconsin),colour='red') + geom_density(aes(x=kstate),colour='purple')
+
+sum(test$wisconsin >= test$kstate)/1000000
+ggplot(test) + geom_density(aes(x=wisconsin),colour='red') + geom_density(aes(x=kstate),colour='purple')
+```
+
+## Simple Seeding Model
+
+## Testing Prediction Power  
+
+```{r predictions of 2019 tourney}
+tourney <- tourney_results %>% select(Season,WTeamID,LTeamID)
+
+summary_wins <- summary %>%
+  mutate(Season,
+         WTeamID = TeamID,
+         WFGM = FGM,
+         WFGM3 = FGM3,
+         WFGM2 = FGM-FGM3,
+         WFTM = FTM,
+         WOppFGM = OppFGM,
+         WOppFGM3 = OppFGM3,
+         WOppFGM2 = OppFGM-OppFGM3,
+         WOppFTM = OppFTM,
+         WmeanDiffPoints = meanDiffPoints,
+         WsdDiffPoints=sdDiffPoints,
+         WGames = total_games) %>%
+          ungroup() %>%
+            select(Season,WGames,WTeamID,WFGM,WFGM3,WFGM2,WFTM,WOppFGM,WOppFGM3,WOppFGM2,WOppFTM,WmeanDiffPoints,WsdDiffPoints)
+
+summary_losses <- summary %>%
+  mutate(Season,
+         LTeamID = TeamID,
+         LFGM = FGM,
+         LFGM3 = FGM3,
+         LFGM2 = FGM-FGM3,
+         LFTM = FTM,
+         LOppFGM = OppFGM,
+         LOppFGM3 = OppFGM3,
+         LOppFGM2 = OppFGM-OppFGM3,
+         LOppFTM = OppFTM,
+         LmeanDiffPoints = meanDiffPoints,
+         LsdDiffPoints=sdDiffPoints,
+         LGames = total_games) %>%
+          ungroup() %>%
+            select(Season,LGames,LTeamID,LFGM,LFGM3,LFGM2,LFTM,LOppFGM,LOppFGM3,LOppFGM2,LOppFTM,LmeanDiffPoints,LsdDiffPoints)
+
+tourney <- tourney %>% inner_join(summary_wins,by=c('WTeamID','Season')) %>% inner_join(summary_losses,by=c('LTeamID','Season'))
+
+## fold in seeds
+
+tourney <- tourney %>% left_join(seeds,by = c('WTeamID' = 'TeamID', 'Season' = 'Season')) %>% mutate(WSeed = Seed) %>% select(-Seed)
+tourney <- tourney %>% left_join(seeds,by = c('LTeamID' = 'TeamID', 'Season' = 'Season')) %>% mutate(LSeed = Seed) %>% select(-Seed)
+
+
+substrRight <- function(x, n){
+  substr(x, nchar(x)-n+1, nchar(x))
+}
+tourney$WSeed <- substrRight(tourney$WSeed, 2)
+tourney$WSeed <- str_replace(tourney$WSeed, 'a','')
+tourney$WSeed <- str_replace(tourney$WSeed, 'b','')
+tourney$WSeed <- str_remove(tourney$WSeed, "^0+")
+tourney$WSeed <- as.numeric(tourney$WSeed)
+
+
+tourney$LSeed <- substrRight(tourney$LSeed, 2)
+tourney$LSeed <- str_replace(tourney$LSeed, 'a','')
+tourney$LSeed <- str_replace(tourney$LSeed, 'b','')
+tourney$LSeed <- str_remove(tourney$LSeed, "^0+")
+tourney$LSeed <- as.numeric(tourney$LSeed)
+
+
+
+tourney$MinSeed <- apply(tourney[,c(18:19)], 1, min, na.rm = TRUE)
+tourney$MaxSeed <- apply(tourney[,c(18:19)], 1, max, na.rm = TRUE)
+
+tourney$matchup <- paste(tourney$MinSeed,', ',tourney$MaxSeed,sep='')
+
+##
+tourney <- tourney %>% mutate(game = row_number())
+```
+
+
+```{r build seed model}
+tourney_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MNCAATourneyCompactResults.csv')
+seeds <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MNCAATourneySeeds.csv')
+
+seed_results <- tourney_results %>% left_join(seeds,by = c('WTeamID' = 'TeamID', 'Season' = 'Season')) %>% mutate(WSeed = Seed) %>% select(Season,WTeamID,LTeamID,WSeed)
+
+seed_results <- seed_results %>% left_join(seeds,by = c('LTeamID' = 'TeamID', 'Season' = 'Season')) %>% mutate(LSeed = Seed) %>% select(-Seed)
+
+substrRight <- function(x, n){
+  substr(x, nchar(x)-n+1, nchar(x))
+}
+seed_results$WSeed <- substrRight(seed_results$WSeed, 2)
+seed_results$WSeed <- str_replace(seed_results$WSeed, 'a','')
+seed_results$WSeed <- str_replace(seed_results$WSeed, 'b','')
+seed_results$WSeed <- str_remove(seed_results$WSeed, "^0+")
+seed_results$WSeed <- as.numeric(seed_results$WSeed)
+
+
+seed_results$LSeed <- substrRight(seed_results$LSeed, 2)
+seed_results$LSeed <- str_replace(seed_results$LSeed, 'a','')
+seed_results$LSeed <- str_replace(seed_results$LSeed, 'b','')
+seed_results$LSeed <- str_remove(seed_results$LSeed, "^0+")
+seed_results$LSeed <- as.numeric(seed_results$LSeed)
+
+
+
+seed_results$MinSeed <- apply(seed_results[,c(4:5)], 1, min, na.rm = TRUE)
+seed_results$MaxSeed <- apply(seed_results[,c(4:5)], 1, max, na.rm = TRUE)
+
+seed_results$matchup <- paste(seed_results$MinSeed,', ',seed_results$MaxSeed,sep='')
+seed_results$binary <- ifelse(seed_results$MinSeed == seed_results$WSeed,1,0) ## if the higher seed won, thwen 1...else 0
+seed_results <- seed_results %>% mutate(game_id = row_number())
+## summarise
+seed_results <- seed_results %>% group_by(matchup) %>% summarise(games = n_distinct(game_id), wins = n_distinct(game_id[binary==1])) %>% mutate(perc = wins/games) %>% mutate(losses = games-wins)
+```
+
+```{r join in seed results}
+seeds_perc <- seed_results %>% select(matchup,perc,seed_games=games)
+
+tourney <- tourney %>% left_join(seeds_perc,by='matchup')
+```
+
+```{r model function}
+modelGen <- function(data) {
+
+## winning stats for points made
+ WFGM <- sum(data$WFGM)
+ WFGM3 <- sum(data$WFGM3)
+ WFGM2 <- WFGM-WFGM3
+
+ WFTM <- sum(data$WFTM)
+
+ WGames <- max(data$WGames)
+
+ WmeanDiff <- max(data$WmeanDiffPoints)
+ WsdDiff <- max(data$WsdDiffPoints)
+
+
+ ## losing stats
+ LFGM <- sum(data$LFGM)
+ LFGM3 <- sum(data$LFGM3)
+ LFGM2 <- LFGM-LFGM3
+
+ LFTM <- sum(data$LFTM)
+
+ LGames <- max(data$LGames)
+
+ LmeanDiff <- max(data$LmeanDiffPoints)
+ LsdDiff <- max(data$LsdDiffPoints)
+
+ ## generate models
+ trials <- 100000
+
+
+ model <- data.frame(WFGM3 = rgamma(trials,WFGM3,WGames), WFGM2 = rgamma(trials,WFGM2,WGames), WFTM = rgamma(trials,WFTM, WGames), WpointDiff = rnorm(100000,WmeanDiff,WsdDiff),LFGM3 = rgamma(trials,LFGM3,LGames), LFGM2 = rgamma(trials,LFGM2,LGames), LFTM = rgamma(trials,LFTM, LGames), LpointDiff = rnorm(100000,LmeanDiff,LsdDiff))
+
+ model$Wpoints <- (model$WFGM3*3)+(model$WFGM2*2)+(model$WFTM*1)
+ model$Lpoints <- (model$LFGM3*3)+(model$LFGM2*2)+(model$LFTM*1)
+
+ return(model)
+}
+```
+
+```{r gen probs}
+genProbs <- function(model_data) {
+
+  prob_diff <- sum(model_data$WpointDiff >= model_data$LpointDiff)/100000
+  prob_points <- sum(model_data$Wpoints >= model_data$Lpoints)/100000
+
+  results <- data.frame(prob_diff,prob_points)
+
+  return(results)
+}
+```
+
+```{r make predictions
+game_list <- tourney %>% sample_n(500,replace=FALSE)
+
+game_list <- unique(game_list$game)
+
+genPreds <- function(data,list){
+
+
+results <- data.frame(game = NA, prob_diff = NA, prob_points = NA)
+
+for (i in list) {
+
+ game <- subset(data, game == i)
+ model <- modelGen(game)
+
+ probs <- genProbs(model)
+ temp <- data.frame(game = i, probs)
+
+ results <- rbind(temp,results)
+
+}
+results <- subset(results,is.na(game) == FALSE)
+
+return(results)
+}
+results <- genPreds(tourney,game_list) %>% select(game,prob_diff,prob_points)
+
+results$final100 <- (results$prob_diff*1)+(results$prob_points*0)
+results$final90 <- (results$prob_diff*.9)+(results$prob_points*.1)
+results$final75 <- (results$prob_diff*.75)+(results$prob_points*.25)
+results$final50 <- (results$prob_diff*.50)+(results$prob_points*.5)
+results$final25 <- (results$prob_diff*.25)+(results$prob_points*.75)
+results$final10 <- (results$prob_diff*.1)+(results$prob_points*.9)
+
+```
+
+```{r joinb bck in}
+preds <- tourney %>% inner_join(results,by='game')  %>% select(Season,WTeamID,LTeamID,WSeed,LSeed,prob_diff,prob_points,final100,final90,final75,final50,final25,final10,perc,seed_games)
+preds <- preds %>% mutate(higher_seed_prob = perc, lower_seed_prob = 1-perc) %>% select(-perc)
+
+preds$result100 <- ifelse(preds$final100 >= 0.5,1,0)
+
+preds$result90 <- ifelse(preds$final90 >= 0.5,1,0)
+preds$result75 <- ifelse(preds$final75 >= 0.5,1,0)
+preds$result50 <- ifelse(preds$final50 >= 0.5,1,0)
+preds$result25 <- ifelse(preds$final25 >= 0.5,1,0)
+preds$result10 <- ifelse(preds$final10 >= 0.5,1,0)
+
+## preds adjustment
+preds$test <- ifelse(preds$WSeed < preds$LSeed & preds$final100 <= 0.4 & preds$seed_games >= 30,(.25*preds$final100)+(.5*preds$prob_points)+(.25*preds$higher_seed_prob),preds$final100)
+
+pred_summary <- preds %>% group_by(Season) %>% summarise(mean100 =mean(result100),mean90 = mean(result90),mean75=mean(result75),mean50=mean(result50),mean25=mean(result25))
+
+```
+
+
+```{r new model}
+## uses opposing behavior as prior
+AltModelGen <- function(data) {
+
+## winning stats for points made
+WGames <- max(data$WGames)
+
+ WFGM <- sum(data$WFGM)
+ WFGM3 <- sum(data$WFGM3)
+ WFGM2 <- WFGM-WFGM3
+ WFTM <- sum(data$WFTM)
+
+ ## winning points afford
+ WOppFGM <- sum(data$WOppFGM)
+ WOppFGM3 <- sum(data$WOppFGM3)
+ WOppFGM2 <- WOppFGM-WOppFGM3
+ WOppFTM <- sum(data$WOppFTM)
+
+ ## losing stats scored
+ LGames <- max(data$LGames)
+
+ LFGM <- sum(data$LFGM)
+ LFGM3 <- sum(data$LFGM3)
+ LFGM2 <- LFGM-LFGM3
+ LFTM <- sum(data$LFTM)
+
+ ## losing stats yes
+ LOppFGM <- sum(data$LOppFGM)
+ LOppFGM3 <- sum(data$LOppFGM3)
+ LOppFGM2 <- LOppFGM-LOppFGM3
+ LOppFTM <- sum(data$LOppFTM)
+
+ ## generate models
+ trials <- 100000
+
+ ##
+ WFGM3 = rgamma(trials,(WFGM3+LOppFGM3),(WGames+LGames))
+ WFGM2 = rgamma(trials,(WFGM2+LOppFGM2),(WGames+LGames))
+ WFTM = rgamma(trials,(WFTM+LOppFTM),(WGames+LGames))
+
+ LFGM3 = rgamma(trials,(LFGM3+WOppFGM3),(WGames+LGames))
+ LFGM2 = rgamma(trials,(LFGM2+WOppFGM2),(WGames+LGames))
+ LFTM = rgamma(trials,(LFTM+WOppFTM),(WGames+LGames))
+
+ model <- data.frame(WFGM3,WFGM2,WFTM,LFGM3,LFGM2,LFTM)
+ model$WPoints <- (WFGM2*2)+(WFGM3*3)+(WFTM*1)
+ model$LPoints <- (LFGM2*2)+(LFGM3*3)+(LFTM*1)
+
+ return(model)
+}
+test <- subset(tourney,game==2)
+model <- AltModelGen(test)
+```
+
+```{r test new model}
+game_list <- tourney %>% sample_n(500,replace=FALSE)
+
+game_list <- unique(game_list$game)
+
+results <- data.frame(game = NA, prob = NA)
+
+for (i in game_list) {
+
+ game <- subset(tourney, game == i)
+ model <- AltModelGen(game)
+
+ prob <- sum(model$WPoints >= model$LPoints)/100000
+ temp <- data.frame(game=i,prob)
+
+ results <- rbind(temp,results)
+
+}
+```
+
+```{r generate submission file}
+sample <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MSampleSubmissionStage1.csv')
+sample <- sample %>% select(ID)
+
+sample$Season <- as.numeric(str_split_fixed(sample$ID,'_',3)[,1])
+sample$WTeamID <- as.numeric(str_split_fixed(sample$ID,'_',3)[,2])
+sample$LTeamID <- as.numeric(str_split_fixed(sample$ID,'_',3)[,3])
+
+
+## join data
+sample <- sample %>% left_join(summary_wins,by=c('Season','WTeamID')) %>% left_join(summary_losses,by=c('Season','LTeamID'))
+sample <- sample %>% mutate(game = row_number())
+
+
+## create list to feed through loop
+game_list <- unique(sample$game)
+
+results <- data.frame(game = NA, prob_diff = NA, prob_points = NA)
+
+
+## run loop
+for (i in game_list) {
+
+ game <- subset(sample, game == i)
+ model <- modelGen(game)
+
+ probs <- genProbs(model)
+ temp <- data.frame(game = i, probs)
+
+ results <- rbind(temp,results)
+
+}
+results <- subset(results,is.na(game) == FALSE)
+
+## collapse down to final output
+sample <- sample %>% left_join(results,by='game')
+sample <- sample %>% select(ID,Pred=prob_diff)
+
+
+write.csv(sample,'/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/test_results.csv', row.names=FALSE)
+
+```
+
+
+
+
+```{r beta calc}
+
+```

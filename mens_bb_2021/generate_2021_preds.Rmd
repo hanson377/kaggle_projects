@@ -1,0 +1,109 @@
+---
+title: 'Simple Bayesian Model for Predicting Tourney Results'
+author: Josh Hanson
+output: github_document
+---
+
+```{r packages}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(stringr)
+library(kableExtra)
+library(plotly)
+```
+
+```{r data}
+tourney_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data_part_ii/MNCAATourneyCompactResults.csv')
+detailed_tourney_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data_part_ii/MNCAATourneyDetailedResults.csv')
+
+season_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data_part_ii/MRegularSeasonCompactResults.csv')
+detailed_season_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data_part_ii/MRegularSeasonDetailedResults.csv')
+
+teams <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data_part_ii/MTeams.csv')
+
+source("/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/functions.R")
+
+set.seed(2431)
+```
+
+
+* * *
+
+## **Quick Explanation of Model**
+
+* * *
+
+This model will use a simple Bayesian Framework for estimating the number of points each team will score in one game.  Every team's scoring statistics (2 PT FGs, 3 PT FGs, and FTs scored) will be summarized for the entire prior season, as well as statistics related to their defensive performance (3 PT FGs, 2 PT FGs, and FTs allowed).
+
+From these summaries, we will use a Bayesian Model that uses an opponent's defensive statistics as our prior for points that a team might score.  The likelihood will be a team's offensive statistics.  These two distributions will then be combined to generate the posterior distribution for a team's total points scored.
+
+From this posterior distribution, we will generate 1 million simulations and observe how many times one team outscores the other.  From these simulations, we can generate probabilistic statements on the outcome of a game.
+
+Lastly, we will be modeling points scored with the Gamma/Poisson Conjugate Family.  Although I'm aware of literature that calls into question the efficacy of modeling points scored with a Poisson distribution,  for the purposes of this exercise, I'm going to assume away these questions.
+
+* * *
+
+## **Data Building**
+
+* * *
+
+First, I aggregate our detailed season data by season and team.  The code below provides me with a simple summary for points scored and points allowed.
+
+```{r season summaries for models}
+summary <- cleanSeasonData(detailed_season_results)[[1]]
+games <- cleanSeasonData(detailed_season_results)[[2]]
+
+```
+
+I now take the aggregated data and join it to the historical tourney results by team and season.  We will generate our historical predictions from this dataset and analyze how they compare to the actual observed results.
+
+```{r joining to historical data}
+tourney <- seasonToTourney(summary)
+```
+
+```{r generate submission file, eval = FALSE}
+sample <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data_part_ii/MSampleSubmissionStage2.csv')
+sample <- sample %>% select(ID)
+
+sample$Season <- as.numeric(str_split_fixed(sample$ID,'_',3)[,1])
+sample$WTeamID <- as.numeric(str_split_fixed(sample$ID,'_',3)[,2])
+sample$LTeamID <- as.numeric(str_split_fixed(sample$ID,'_',3)[,3])
+
+
+## join data
+sample <- sample %>% left_join(summary_wins,by=c('Season','WTeamID')) %>% left_join(summary_losses,by=c('Season','LTeamID'))
+sample <- sample %>% mutate(game = row_number())
+
+
+## create list to feed through loop
+game_list <- sample
+game_list <- unique(game_list$game)
+
+results <- data.frame(game = NA, prob1 = NA, prob2 = NA)
+
+
+## run loop
+for (i in game_list) {
+
+ game <- subset(sample, game == i)
+ model <- ModelGen(game)
+
+ prob1 <- sum(model$WPoints >= model$LPoints)/500000
+ prob2 <- sum(model$WDiff >= model$LDiff)/500000
+
+ temp <- data.frame(game=i,prob1,prob2)
+
+ results <- rbind(temp,results)
+
+}
+results <- subset(results,is.na(game) == FALSE)
+
+## collapse down to final output
+sample <- sample %>% left_join(results,by='game')
+sample <- sample %>% select(ID,Pred=prob1)
+
+
+write.csv(sample,'/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/2021preds.csv', row.names=FALSE)
+
+```

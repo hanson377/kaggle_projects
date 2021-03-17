@@ -1,0 +1,403 @@
+---
+title: 'Simple Bayesian Model for Predicting Tourney Results'
+author: Josh Hanson
+output: github_document
+---
+
+```{r packages, echo = FALSE, warnings = FALSE, message = FALSE}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(stringr)
+library(kableExtra)
+library(plotly)
+```
+
+```{r data, echo = FALSE, warning = FALSE}
+seeds <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MNCAATourneySeeds.csv')
+
+tourney_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MNCAATourneyCompactResults.csv')
+detailed_tourney_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MNCAATourneyDetailedResults.csv')
+
+season_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MRegularSeasonCompactResults.csv')
+detailed_season_results <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MRegularSeasonDetailedResults.csv')
+
+teams <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MTeams.csv')
+
+source("/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/functions.R")
+
+set.seed(2431)
+```
+
+
+* * *  
+
+## **Quick Explanation of Model**
+
+* * *  
+
+This model will use a simple Bayesian Framework for estimating the number of points each team will score in one game.  Every team's scoring statistics (2 PT FGs, 3 PT FGs, and FTs scored) will be summarized for the entire season to the tournament, as well as statistics related to their defensive performance (3 PT FGs, 2 PT FGs, and FTs allowed).  
+
+From these summaries, we will use a Bayesian Model that uses an opponent's defensive statistics as our prior for points that a team might score.  The likelihood will be a team's offensive statistics.  These two distributions will then be combined to generate the posterior distribution for a team's total points scored.  
+
+From this posterior distribution for points scored, we will generate 1 million simulations and observe how many times one team outscores the other.  From these simulations, we can generate probabilistic statements on the outcome of a game.
+
+Lastly, we will be modeling points scored with the Gamma/Poisson Conjugate Family.  Although I'm aware of literature that calls into question the efficacy of modeling points scored with a Poisson distribution,  for the purposes of this exercise, I'm going to assume away these questions.  
+
+* * *  
+
+## **Data Building**  
+
+* * *  
+
+First, I aggregate our detailed season data by season and team.  The FUNCTION below provides me with a summary for points scored and points allowed by every team and every season in our data.  You can find the logic for this function in my project folder.    
+
+```{r season summaries for models, message = FALSE}
+summary <- cleanSeasonData(detailed_season_results)[[1]]
+games <- cleanSeasonData(detailed_season_results)[[2]]
+
+```  
+
+I now take the aggregated data and join it to the historical tourney results by team and season.  This function can also be studied in my project folder.  
+
+We will generate our historical predictions from this dataset and analyze how they compare to the actual observed results.  
+
+```{r joining to historical data, message = FALSE}
+tourney <- seasonToTourney(summary)
+```
+
+* * *  
+
+## **Model Example**  
+
+* * *
+
+This is all a bit abstract, so lets take a look at a few examples.  Because I am from Lawrence, Kansas and am a huge Jayhawks fan, I'm going to illustrate my model with the 2008 Final Four game between North Carolina and Kansas.  
+
+First, lets examine the simple model for total 2 PT FGs that Kansas might expect to score in the game and compare that to the total 2 PT FGs that North Carolina might expect to score in the game.  From the simple table below, we can see that prior to the post-season, Kansas averaged ~23 FGs per game while allowing only 14 FGs per game.  North Carolina averaged ~26 FGs per game but allowed nearly 20.  
+
+We take these simple summary statistics and model a gamma distribution for total 2PT FGs scored using the opposing team's defense (Avg Opp FGM2) as the prior and the team's offensive statistics (Avg FGM2) as the likelihood.  These are then combined to form a posterior distribution that serves as our range of possible points scored by a given team.  
+
+```{r summary data 2 pt fg, echo = FALSE, message = FALSE}
+names <- teams %>% select(TeamID,TeamName)
+check <- summary %>% filter(Season == '2008' & (TeamID == '1242' | TeamID == '1314')) %>% select(TeamID,Season,total_games,FGM,FGM3,OppFGM,OppFGM3) %>% inner_join(names,by='TeamID') %>% mutate(FGM2 = FGM-FGM3, OppFGM2 = OppFGM-OppFGM3)
+
+check <- check %>% select(TeamName,Season,total_games,FGM2,OppFGM2) %>% mutate(AvgFGM2 = FGM2/total_games, AvgOppFGM2 = OppFGM2/total_games)
+kable(check,col.names=c('Team ID','Team Name','Season', 'Total Games Played','FGM2','Opponent FGM2','Avg FGM2', 'Avg Opp FGM2'),caption = 'Simple Summary Statistics: 2 PT FGs Made and Allowed')
+```  
+
+Below, you can find the prior, likelihood, and posterior distributions visualized for both teams.  You can see that Kansas has a slight edge here, despite North Carolina historically scoring many more 2 PT FGs per game.  
+
+This is because the expectations for Kansas' very good defense mix with the expectations for North Carolina's very good offense and the result is a distribution somewhere in the middle.  On the other hand, North Carolina's less impressive defense typically allows somewhere near the points Kansas typically scores, meaning our expectations for the posterior don't shift much when predicting Kansas's total points scored.  
+
+From these models, we generate 1 million random draws and observe the proportion of times Kansas records more 2 PT FGs than North Carolina.  When we do this, we find that Kansas records more 2 PT FGs 86% of the time.  Thus, we can assign an 86% probability to Kansas recording more 2 PT FGs than North Carolina.  
+
+
+```{r 2 pt fg view, echo = FALSE, message = FALSE}
+game <- subset(tourney,WTeamName == 'Kansas' & LTeamName == "North Carolina" & Season == '2008')
+simulations <- ModelGen(game)
+prob <- sum(simulations$WFGM2_posterior >= simulations$LFGM2_posterior)/nrow(simulations)
+prob_string <- paste('probilitity: ',round(prob*100,digits=1),'%',sep='')
+
+prob <- sum(simulations$LFGM2_posterior >= 19)/nrow(simulations)
+
+genViews('FGM2','Kansas','North Carolina','2008',10,30,'Model for 2PT FGs Scored by Kansas','Model for 2PT FGs Scored by North Carolina')
+```    
+
+Interestingly enough, North Carolina recorded 19 2-PT FGs during that game, which is a value within the left tail of our predictive posterior distribution.  Additionally, during the regular season, North Carolina saw only 5% of their games with lower 2 PT FGs.  
+
+Kansas recorded 29 field goals, which is far above any predicted value and a value higher than many of their games during the regular season.  In fact, Across 33 games, Kansas only recorded 29 or more FG2 ~6% of the time.  
+
+The above is a great example of why sports are sometimes just a bit unpredictable, irregardless of the sophistication of our models.  In this case, one team performed far above any expectations we might have for them while another performed far below any expectations we might have...and this was a Final Four game!  
+
+As we've all heard before...all models are wrong, some are useful.  In this instance, although the model was wrong with regards to total 2PT FGs made, it did successfully predict the binary outcome of one team having more 2 PT FGs.  That alone is pretty cool.  
+
+```{r look at ku dist, echo = FALSE, message = FALSE}
+kansas <- subset(games,Season == 2008 & TeamID == '1242')
+kansas$FGM2 <- kansas$FGM-kansas$FGM3
+prob <- sum(kansas$FGM2 >= 29)/nrow(kansas) ## probability calc
+
+north_carolina <- subset(games,Season == 2008 & TeamID == '1314')
+north_carolina$FGM2 <- north_carolina$FGM-north_carolina$FGM3
+prob <- sum(north_carolina$FGM2 <= 19)/nrow(north_carolina) ## probabilty calc
+
+
+view1 <- ggplot(kansas,aes(x=FGM2)) + geom_histogram(binwidth=1) + geom_vline(xintercept=29,linetype='dashed',colour='red') + ggtitle('Distribution of 2 PT FGs Made in Regular Season by Kansas') + xlab('Total 2 PT FGs') + ylab('Total Games')
+view2 <- ggplot(north_carolina,aes(x=FGM2)) + geom_histogram(binwidth=1) + geom_vline(xintercept=19,linetype='dashed',colour='red') + ggtitle('Distribution of 2 PT FGs Made in Regular Season by North Carolina')  + xlab('Total 2 PT FGs') + ylab('Total Games')
+
+
+grid.arrange(view1,view2,nrow=2)
+```
+
+The same exercise is carried out for every type of FG (2 PT, 3 PT, and 1 PT FT).  From our estimates for total FG-types scored, we can estimate the total points scored as simply the sum of 2 PT FGs, 3 PT FGS, and FTs made.  Once we have these estimates for total points scored, we can count the number of times one team scores more points than the other across our 1 million simulations.  
+
+Using this model, we estimate Kansas wins 75% of the time.  Indeed, they did win.  
+
+```{r points scored, echo = FALSE, message = FALSE}
+game <- subset(tourney,WTeamName == 'Kansas' & LTeamName == "North Carolina" & Season == '2008')
+simulations <- ModelGen(game)
+simulations$PointDiff <- simulations$WPoints-simulations$LPoints
+prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
+
+genViews('Points','Kansas','North Carolina','2008',50,90,'Model for Total Points Scored by Kansas','Model for Total Points Scored by North Carolina')
+vizPoints('Kansas','North Carolina','2008')
+
+
+```  
+
+Kansas went onto play Memphis in the title game and win the national championship in overtime.  What would our models have predicted for this game?  Our models show this being a clear toss-up, with Memphis winning 51% of simulations and Kansas winning 49% of simulations.  
+
+Digging a little deeper, our model predicts that it is extremely unlikely that Kansas would make more 3PT FGs than Memphis, but could potentially make up for this difference with free-throws and 3-point FGs.  This is exactly what we saw, as Memphis made 3 more 3-point FGs than Kansas, but 7 less 2 PT FGs and 2 less free-throws.  
+
+```{r kansas memphis, echo = FALSE }
+genViews('Points','Kansas','Memphis','2008',50,90,'Model for Total Points Scored by Kansas','Model for Total Points Scored by Memphis')
+vizPoints('Kansas','Memphis','2008')
+
+
+game <- subset(tourney,WTeamName == 'Kansas' & LTeamName == "Memphis" & Season == '2008')
+simulations <- ModelGen(game)
+simulations$PointDiff <- simulations$WPoints-simulations$LPoints
+prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
+```
+
+
+* * *  
+
+## **Examination of 2008 NCAA Tournament Results**  
+
+* * *    
+
+
+The 2008 Tournament was full of thrilling games and huge upsets.  Would this model have predicted any of them?  
+
+One of the biggest cinderella performances of that year was a run made by Davidson.  Despite being a 10th seed, they advanced all the way to the Sweet 16 before losing to Kansas (the eventual champion).  Along the way, they defeated some traditionally high-performing programs like Gonzaga, Georgetown, and Wisconsin.  
+
+Our model would have given Davidson ~55% probability of defeating Gonzaga, ~68% probability of defeating Georgetown, and a ~48% probability of defeating Wisconsin.  It would have then only given Davidson an 8% chance of defeating Kansas Jayhawks.  All in all, it would have nearly perfectly predicted Davidson's run.  
+
+```{r davidson gonzaga, echo = FALSE }
+genViews('Points','Davidson','Gonzaga','2008',50,90,'Model for Total Points Scored by Davidson','Model for Total Points Scored by Gonzaga')
+
+game <- subset(tourney,WTeamName == 'Davidson' & LTeamName == "Gonzaga" & Season == '2008')
+simulations <- ModelGen(game)
+simulations$PointDiff <- simulations$WPoints-simulations$LPoints
+prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
+```  
+
+```{r davidson georgetown, echo = FALSE }
+genViews('Points','Davidson','Georgetown','2008',50,90,'Model for Total Points Scored by Davidson','Model for Total Points Scored by Georgetown')
+
+game <- subset(tourney,WTeamName == 'Davidson' & LTeamName == "Georgetown" & Season == '2008')
+simulations <- ModelGen(game)
+simulations$PointDiff <- simulations$WPoints-simulations$LPoints
+prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
+```   
+
+```{r davidson wisconsin, echo = FALSE }
+genViews('Points','Davidson','Wisconsin','2008',50,90,'Model for Total Points Scored by Davidson','Model for Total Points Scored by Wisconsin')
+
+game <- subset(tourney,WTeamName == 'Davidson' & LTeamName == "Wisconsin" & Season == '2008')
+simulations <- ModelGen(game)
+simulations$PointDiff <- simulations$WPoints-simulations$LPoints
+prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
+```  
+
+```{r davidson kansas, echo = FALSE }
+genViews('Points','Kansas','Davidson','2008',50,90,'Model for Total Points Scored by Kansas','Model for Total Points Scored by Davidson')
+
+game <- subset(tourney,WTeamName == 'Kansas' & LTeamName == "Davidson" & Season == '2008')
+simulations <- ModelGen(game)
+simulations$PointDiff <- simulations$WPoints-simulations$LPoints
+prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
+```  
+
+Another cinderella story from that year was Western Kentucky.  Would this modeling approach have predicted their run?  Arguably, Western Kentucky was mostly the beneficiary of other upsets and beat two rather weak teams on their run to the Sweet 16.  My model seemed to have picked up on that.
+
+Western Kentucky would be given a 55% probability of winning against Drake and a 98% probability of winning against San Diego.  They did both of those things. It would have then given them  only ~19% probability of beating UCLA.  UCLA did indeed go onto defeat Western Kentucky, thus ending their cinderella run.   
+
+```{r wku drake, echo = FALSE}
+genViews('Points','WKU','Drake','2008',50,90,'Model for Total Points Scored by WKU','Model for Total Points Scored by Drake')
+
+game <- subset(tourney,WTeamName == 'WKU' & LTeamName == "Drake" & Season == '2008')
+simulations <- ModelGen(game)
+simulations$PointDiff <- simulations$WPoints-simulations$LPoints
+prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
+```  
+
+* * *  
+
+
+```{r wku san diego, echo = FALSE}
+genViews('Points','WKU','San Diego','2008',50,90,'Model for Total Points Scored by WKU','Model for Total Points Scored by San Diego')
+
+game <- subset(tourney,WTeamName == 'WKU' & LTeamName == "San Diego" & Season == '2008')
+simulations <- ModelGen(game)
+simulations$PointDiff <- simulations$WPoints-simulations$LPoints
+prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
+```  
+
+* * *  
+
+
+```{r wku ucla, echo = FALSE}
+genViews('Points','UCLA','WKU','2008',50,90,'Model for Total Points Scored by UCLA','Model for Total Points Scored by WKU')
+
+game <- subset(tourney,WTeamName == 'UCLA' & LTeamName == "WKU" & Season == '2008')
+simulations <- ModelGen(game)
+simulations$PointDiff <- simulations$WPoints-simulations$LPoints
+prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
+```  
+
+* * *  
+
+Although this model seems to have the ability to capture a few upsets, it also missed a few.  Namely, it would have only given West Virginia a 25% probability of defeating Duke.  Although not horrible odds, a perhaps higher than others might have give them, it wouldn't help me make a prediction against Duke.    
+
+```{r duke west virgina, echo = FALSE}
+genViews('Points','West Virginia','Duke','2008',50,90,'Model for Total Points Scored by West Virginia','Model for Total Points Scored by Duke')
+
+game <- subset(tourney,WTeamName == 'West Virginia' & LTeamName == "Duke" & Season == '2008')
+simulations <- ModelGen(game)
+simulations$PointDiff <- simulations$WPoints-simulations$LPoints
+prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
+```
+
+Additionally, it would have given Siena a 45% probability of defeating Vanderbilt in the first round.  Although this is arguably a toss-up from a probabilistic viewpoint, and is perhaps also higher probabilities than most would have given them, toss-ups don't matter when we are using these probabilities to define binary predictions.  
+
+```{r siena vandy, echo = FALSE}
+genViews('Points','Siena','Vanderbilt','2008',50,90,'Model for Total Points Scored by Siena','Model for Total Points Scored by Vanderbilt')
+
+game <- subset(tourney,WTeamName == 'Siena' & LTeamName == "Vanderbilt" & Season == '2008')
+simulations <- ModelGen(game)
+simulations$PointDiff <- simulations$WPoints-simulations$LPoints
+prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
+```
+
+* * *  
+
+## **Testing Historical Performance**  
+
+* * *    
+
+In order to test the true performance of this model, I can take 1000 random games from previous tournaments and compare my prediction to the actual observed result.  
+
+```{r generate preds, echo = FALSE, warning = FALSE, message = FALSE}
+game_list <- tourney %>% sample_n(1000,replace=FALSE)
+
+game_list <- unique(game_list$game)
+
+results <- data.frame(game = NA, prob1 = NA, prob2 = NA)
+
+for (i in game_list) {
+
+ game <- subset(tourney, game == i)
+ model <- ModelGen(game)
+
+ prob1 <- sum(model$WPoints >= model$LPoints)/500000
+ prob2 <- sum(model$WDiff >= model$LDiff)/500000
+
+ temp <- data.frame(game=i,prob1,prob2)
+
+ results <- rbind(temp,results)
+
+}
+results <- subset(results,is.na(prob1) == FALSE)
+
+pred_results <- tourney %>% inner_join(results,by='game') %>% select(Season,WTeamName,LTeamName,WTeamID,LTeamID,prob1,prob2)
+pred_results <- pred_results %>% left_join(seeds,by=c('WTeamID' = 'TeamID', 'Season' = 'Season')) %>% mutate(WSeed = Seed) %>% select(-Seed)
+pred_results <- pred_results %>% left_join(seeds,by=c('LTeamID' = 'TeamID', 'Season' = 'Season')) %>% mutate(LSeed = Seed) %>% select(-Seed)
+
+pred_results <- pred_results %>% mutate(game = row_number())
+pred_results$predicted_win <- ifelse(pred_results$prob1 >= .5,1,0)
+```
+
+```{r format seeds, echo = FALSE}
+pred_results$WSeed <- substrRight(pred_results$WSeed, 2)
+pred_results$WSeed <- str_replace(pred_results$WSeed, 'a','')
+pred_results$WSeed <- str_replace(pred_results$WSeed, 'b','')
+pred_results$WSeed <- str_remove(pred_results$WSeed, "^0+")
+pred_results$WSeed <- as.numeric(pred_results$WSeed)
+
+
+pred_results$LSeed <- substrRight(pred_results$LSeed, 2)
+pred_results$LSeed <- str_replace(pred_results$LSeed, 'a','')
+pred_results$LSeed <- str_replace(pred_results$LSeed, 'b','')
+pred_results$LSeed <- str_remove(pred_results$LSeed, "^0+")
+pred_results$LSeed <- as.numeric(pred_results$LSeed)
+
+
+
+pred_results$MinSeed <- apply(pred_results[,c(8:9)], 1, min, na.rm = TRUE)
+pred_results$MaxSeed <- apply(pred_results[,c(8:9)], 1, max, na.rm = TRUE)
+
+pred_results$matchup <- paste(pred_results$MinSeed,', ',pred_results$MaxSeed,sep='')
+```  
+
+Our model successfully predicted the outcome of a game nearly 67% of the time.  Although not perfect, this isn't too shabby and is a bit above what you might expect from randomly choosing results.  
+
+```{r summary by seed spread, echo = FALSE, warnings = FALSE}
+pred_results$seed_spread <- pred_results$WSeed-pred_results$LSeed
+summary_by_matchup <- pred_results %>% group_by(seed_spread) %>% summarise(obs = n_distinct(game), correct = n_distinct(game[predicted_win==1])) %>% mutate(success_rate = correct/obs)
+
+
+xrng <- range(pred_results$seed_spread)
+yrng <- range(pred_results$success_rate)
+
+caption <- paste('negative spread value implies higher seed defeating lower seed')
+
+summary_by_matchup %>% filter(obs >= 15) %>% ggplot(aes(x=seed_spread,y=success_rate,colour=factor(seed_spread))) + geom_point(aes(size=obs),alpha=.5) + theme(legend.position='none',legend.text=element_blank()) + ylab('Rate of Correct Predictions') + xlab('Seed Spread') + scale_y_continuous(label=scales::percent) + annotate("text", x = xrng[1], y = yrng[2], label = caption,vjust = -2,hjust = -.025) + geom_hline(yintercept=.5,linetype='dashed',colour='red') + ggtitle('Correct Prediction Rates by Spread of Seeds in Tourney')
+```
+
+Additionally, the model doesn't often grossly underestimate a team's probability of winning when they go onto win.  A great majority of probability estimates for the winning teams are above 50% with very few (<13%) below 25%.    
+
+```{r yes, echo = FALSE, warnings = FALSE}
+view1 <- ggplot(pred_results,aes(x=prob1)) + geom_histogram(binwidth=.025) + xlab('Predicted Probability for Winning Team') + ylab('') + ylab('Total Games') + ggtitle('Distribution of Predicted Probability for Winners') + scale_x_continuous(label=scales::percent)
+view2 <- ggplot(pred_results,aes(x=prob1)) + stat_ecdf() + xlab('Predicted Probability for Winning Team') + ylab('Cumulative Share of 1000 NCAA Games') + scale_y_continuous(label=scales::percent) + scale_x_continuous(label=scales::percent)
+
+grid.arrange(view1,view2)
+```
+
+
+```{r generate submission file, eval = FALSE, echo = FALSE}
+sample <- read.csv('/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/MSampleSubmissionStage1.csv')
+sample <- sample %>% select(ID)
+
+sample$Season <- as.numeric(str_split_fixed(sample$ID,'_',3)[,1])
+sample$WTeamID <- as.numeric(str_split_fixed(sample$ID,'_',3)[,2])
+sample$LTeamID <- as.numeric(str_split_fixed(sample$ID,'_',3)[,3])
+
+
+## join data
+sample <- sample %>% left_join(summary_wins,by=c('Season','WTeamID')) %>% left_join(summary_losses,by=c('Season','LTeamID'))
+sample <- sample %>% mutate(game = row_number())
+
+
+## create list to feed through loop
+game_list <- sample
+game_list <- unique(game_list$game)
+
+results <- data.frame(game = NA, prob1 = NA, prob2 = NA)
+
+
+## run loop
+for (i in game_list) {
+
+ game <- subset(sample, game == i)
+ model <- ModelGen(game)
+
+ prob1 <- sum(model$WPoints >= model$LPoints)/500000
+ prob2 <- sum(model$WDiff >= model$LDiff)/500000
+
+ temp <- data.frame(game=i,prob1,prob2)
+
+ results <- rbind(temp,results)
+
+}
+results <- subset(results,is.na(game) == FALSE)
+
+## collapse down to final output
+sample <- sample %>% left_join(results,by='game')
+sample <- sample %>% select(ID,Pred=prob)
+
+
+write.csv(sample,'/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/test_results.csv', row.names=FALSE)
+
+```
