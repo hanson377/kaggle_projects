@@ -334,7 +334,7 @@ probability estimates for the winning teams are above 50% with very few
 
 ------------------------------------------------------------------------
 
-## **Optimization Attempts**
+## **Optimization Attempts: Weighting Offensive and Defensive Expectations**
 
 ------------------------------------------------------------------------
 
@@ -345,28 +345,20 @@ think a team’s historical offensive performance is a slightly better
 predictor than their defensive performance. We could then compare the
 successful prediction rates across a set of different weightings.
 
-This exercise was performed and it was found to be very true. This
-model’s prediction power is optimized near a weighting of \~35%, where
-prediction accuracy settles around 80-83%. This is a tremendous
-improvement of the previous model, which saw success rates \~67%.
+Using 1k random games from previous NCAA tournaments, we find that
+applying a weighting for the defense is counter-productive, resulting in
+less accurate predictions. Optimal predictions are found anywhere
+between a 0% and 10% weighting toward the offense. Prediction accuracy
+only decreases rapidly after this point.
 
 ![](bayes_pointed_scored_files/figure-gfm/run%20loop%20to%20find%20optimal%20weighting-1.png)<!-- -->
 
-Predictions rates across our different seed spreads are, as expected,
-also greatly improved. We have an 80% accuracy for any games involving
-seed spreads between -15 and -1. For games with a spread of 0, we have
-an accuracy of 70%, which seems very good for games that most would
-consider a coin-toss. For upsets (seed spreads between 1 and 8), we have
-success rates above 50%.
-
-![](bayes_pointed_scored_files/figure-gfm/summary%20by%20seed%20spread%202-1.png)<!-- -->
-
-Although more research is needed, this drastic improvement might be
+Although more research is needed, these slight improvements might be
 explained by a few interesting anecdotals. One great example is the
 Davidson vs Wisconsin matchup from 2008 that we described earlier.
 Although our old model gave Wisconsin a slight advantage, our new model
 gives Davidson a far greater probability of winning. Our new model would
-have given Davidson a 90% chance of victory compared to the previous
+have given Davidson a 58% chance of victory compared to the previous
 estimate of 48%.
 
 ![](bayes_pointed_scored_files/figure-gfm/weight%20stuff%20toward%20offense-1.png)<!-- -->

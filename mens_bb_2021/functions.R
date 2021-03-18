@@ -304,10 +304,10 @@ team2_OppFGM3 <- max(game$LOppFGM3)*DMultiplier
 
 ## free throws made
 team1_FTM <- max(game$WFTM)*OMultiplier
-team1_OppFTM <- max(game$WOppFTM)**DMultiplier
+team1_OppFTM <- max(game$WOppFTM)*DMultiplier
 
 team2_FTM <- max(game$LFTM)*OMultiplier
-team2_OppFTM <- max(game$LOppFTM)**DMultiplier
+team2_OppFTM <- max(game$LOppFTM)*DMultiplier
 
 ## models
 trials <- 500000
@@ -346,7 +346,7 @@ WGames <- max(data$WGames)
  ## winning points afford
  WOppFGM <- sum(data$WOppFGM)*DMultiplier
  WOppFGM3 <- sum(data$WOppFGM3)*DMultiplier
- WOppFGM2 <- WOppFGM-WOppFGM3*DMultiplier
+ WOppFGM2 <- (WOppFGM-WOppFGM3)*DMultiplier
  WOppFTM <- sum(data$WOppFTM)*DMultiplier
 
  WMeanDiff <- max(data$WmeanDiffPoints)
@@ -358,12 +358,12 @@ WGames <- max(data$WGames)
  LFGM <- sum(data$LFGM)*OMultiplier
  LFGM3 <- sum(data$LFGM3)*OMultiplier
  LFGM2 <- (LFGM-LFGM3)*OMultiplier
- LFTM <- sum(data$LFTM)
+ LFTM <- sum(data$LFTM)*OMultiplier
 
  ## losing stats yes
  LOppFGM <- sum(data$LOppFGM)*DMultiplier
  LOppFGM3 <- sum(data$LOppFGM3)*DMultiplier
- LOppFGM2 <- LOppFGM-LOppFGM3*DMultiplier
+ LOppFGM2 <- (LOppFGM-LOppFGM3)*DMultiplier
  LOppFTM <- sum(data$LOppFTM)*DMultiplier
 
  LMeanDiff <- max(data$LmeanDiffPoints)
