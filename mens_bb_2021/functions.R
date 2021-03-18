@@ -278,3 +278,195 @@ vizPoints <- function(WTeam,LTeam,Year) {
   return(grid.arrange(view1,view2,view3,view4,nrow=2,top = 'Distribution of Differences in Points Scored Across 1M Simulations'))
 
 }
+
+modelTest <- function(WTeam,LTeam,SeasonP,OWeighting) {
+
+game <- subset(tourney,WTeamName == WTeam & LTeamName == LTeam & Season == SeasonP)
+
+OMultiplier <- 1+OWeighting
+DMultiplier <- 1-OWeighting
+
+team1_games <- max(game$WGames)
+team2_games <- max(game$LGames)
+
+team1_FGM2 <- max(game$WFGM2)*OMultiplier
+team1_OppFGM2 <- max(game$WOppFGM2)*DMultiplier
+
+team2_FGM2 <- max(game$LFGM2)*OMultiplier
+team2_OppFGM2 <- max(game$LOppFGM2)*DMultiplier
+
+## 3 pt fgs
+team1_FGM3 <- max(game$WFGM3)*OMultiplier
+team1_OppFGM3 <- max(game$WOppFGM3)*DMultiplier
+
+team2_FGM3 <- max(game$LFGM3)*OMultiplier
+team2_OppFGM3 <- max(game$LOppFGM3)*DMultiplier
+
+## free throws made
+team1_FTM <- max(game$WFTM)*OMultiplier
+team1_OppFTM <- max(game$WOppFTM)**DMultiplier
+
+team2_FTM <- max(game$LFTM)*OMultiplier
+team2_OppFTM <- max(game$LOppFTM)**DMultiplier
+
+## models
+trials <- 500000
+
+WFGM2 <- rgamma(trials,team2_OppFGM2+team1_FGM2,team1_games+team2_games)
+LFGM2 <- rgamma(trials,team1_OppFGM2+team2_FGM2,team1_games+team2_games)
+
+WFGM3 <- rgamma(trials,team2_OppFGM3+team1_FGM3,team1_games+team2_games)
+LFGM3 <- rgamma(trials,team1_OppFGM3+team2_FGM3,team1_games+team2_games)
+
+WFTM <- rgamma(trials,team2_OppFTM+team1_FTM,team1_games+team2_games)
+LFTM <- rgamma(trials,team1_OppFTM+team2_FTM,team1_games+team2_games)
+
+model <- data.frame(WFGM2,LFGM2,WFGM3,LFGM3,WFTM,LFTM)
+model$WPoints <- (model$WFGM2*2)+(model$WFGM3*3)+(model$WFTM*1)
+model$LPoints <- (model$LFGM2*2)+(model$LFGM3*3)+(model$LFTM*1)
+model$diff <- (model$WPoints-model$LPoints)
+
+return(model)
+
+}
+
+ModelGenWeighted <- function(data,OWeighting,NSims) {
+
+  OMultiplier <- 1+OWeighting
+  DMultiplier <- 1-OWeighting
+
+## winning stats for points made
+WGames <- max(data$WGames)
+
+ WFGM <- sum(data$WFGM)*OMultiplier
+ WFGM3 <- sum(data$WFGM3)*OMultiplier
+ WFGM2 <- (WFGM-WFGM3)*OMultiplier
+ WFTM <- sum(data$WFTM)*OMultiplier
+
+ ## winning points afford
+ WOppFGM <- sum(data$WOppFGM)*DMultiplier
+ WOppFGM3 <- sum(data$WOppFGM3)*DMultiplier
+ WOppFGM2 <- WOppFGM-WOppFGM3*DMultiplier
+ WOppFTM <- sum(data$WOppFTM)*DMultiplier
+
+ WMeanDiff <- max(data$WmeanDiffPoints)
+ WSDDiff <- max(data$WsdDiffPoints)
+
+ ## losing stats scored
+ LGames <- max(data$LGames)
+
+ LFGM <- sum(data$LFGM)*OMultiplier
+ LFGM3 <- sum(data$LFGM3)*OMultiplier
+ LFGM2 <- (LFGM-LFGM3)*OMultiplier
+ LFTM <- sum(data$LFTM)
+
+ ## losing stats yes
+ LOppFGM <- sum(data$LOppFGM)*DMultiplier
+ LOppFGM3 <- sum(data$LOppFGM3)*DMultiplier
+ LOppFGM2 <- LOppFGM-LOppFGM3*DMultiplier
+ LOppFTM <- sum(data$LOppFTM)*DMultiplier
+
+ LMeanDiff <- max(data$LmeanDiffPoints)
+ LSDDiff <- max(data$LsdDiffPoints)
+
+ ## generate models
+ trials <- NSims
+
+ ## general models with gamma distribution
+ WFGM3_posterior = rgamma(trials,(WFGM3+LOppFGM3),(WGames+LGames))
+ WFGM3_prior = rgamma(trials,LOppFGM3,LGames)
+ WFGM3_likelihood = rgamma(trials,WFGM3,WGames)
+
+ WFGM2_posterior = rgamma(trials,(WFGM2+LOppFGM2),(WGames+LGames))
+ WFGM2_prior = rgamma(trials,LOppFGM2,LGames)
+ WFGM2_likelihood = rgamma(trials,WFGM2,WGames)
+
+ WFTM_posterior = rgamma(trials,(WFTM+LOppFTM),(WGames+LGames))
+ WFTM_prior = rgamma(trials,LOppFTM,LGames)
+ WFTM_likelihood = rgamma(trials,WFTM,WGames)
+
+
+ LFGM3_posterior = rgamma(trials,(LFGM3+WOppFGM3),(WGames+LGames))
+ LFGM3_prior = rgamma(trials,WOppFGM3,WGames)
+ LFGM3_likelihood = rgamma(trials,LFGM3,LGames)
+
+ LFGM2_posterior = rgamma(trials,(LFGM2+WOppFGM2),(WGames+LGames))
+ LFGM2_prior = rgamma(trials,WOppFGM2,WGames)
+ LFGM2_likelihood = rgamma(trials,LFGM2,LGames)
+
+ LFTM_posterior = rgamma(trials,(LFTM+WOppFTM),(WGames+LGames))
+ LFTM_prior = rgamma(trials,WOppFTM,WGames)
+ LFTM_likelihood = rgamma(trials,LFTM,LGames)
+
+ WDiff = rnorm(trials,WMeanDiff,WSDDiff)
+ LDiff = rnorm(trials,LMeanDiff,LSDDiff)
+
+ model <- data.frame(WFGM3_posterior,WFGM2_posterior,WFTM_posterior,LFGM3_posterior,LFGM2_posterior,LFTM_posterior,WDiff,LDiff,WFGM3_prior,WFGM3_likelihood,WFGM2_prior,WFGM2_likelihood,LFGM2_likelihood,LFGM2_prior,LFGM3_prior,LFGM3_likelihood,LFTM_prior,LFTM_likelihood,WFTM_prior,WFTM_likelihood,LFTM_prior,LFTM_likelihood)
+
+ model$WPoints <- (WFGM2_posterior*2)+(WFGM3_posterior*3)+(WFTM_posterior*1)
+ model$WPoints_prior <- (WFGM2_prior*2)+(WFGM3_prior*3)+(WFTM_prior*1)
+ model$WPoints_likelihood <- (WFGM2_likelihood*2)+(WFGM3_likelihood*3)+(WFTM_likelihood*1)
+
+ model$LPoints <- (LFGM2_posterior*2)+(LFGM3_posterior*3)+(LFTM_posterior*1)
+ model$LPoints_prior <- (LFGM2_prior*2)+(LFGM3_prior*3)+(LFTM_prior*1)
+ model$LPoints_likelihood <- (LFGM2_likelihood*2)+(LFGM3_likelihood*3)+(LFTM_likelihood*1)
+
+ return(model)
+}
+
+
+makePreds <- function(Ngames,Nsims,Weight){
+
+game_list <- tourney %>% sample_n(Ngames,replace=FALSE)
+
+game_list <- unique(game_list$game)
+
+results <- data.frame(game = NA, prob1 = NA)
+
+for (i in game_list) {
+
+ game <- subset(tourney, game == i)
+ model <- ModelGenWeighted(game,Weight,Nsims)
+
+ prob1 <- sum(model$WPoints >= model$LPoints)/Nsims
+
+ temp <- data.frame(game=i,prob1)
+
+ results <- rbind(temp,results)
+
+}
+results <- subset(results,is.na(prob1) == FALSE)
+
+pred_results <- tourney %>% inner_join(results,by='game') %>% select(Season,WTeamName,LTeamName,WTeamID,LTeamID,prob1)
+pred_results <- pred_results %>% left_join(seeds,by=c('WTeamID' = 'TeamID', 'Season' = 'Season')) %>% mutate(WSeed = Seed) %>% select(-Seed)
+pred_results <- pred_results %>% left_join(seeds,by=c('LTeamID' = 'TeamID', 'Season' = 'Season')) %>% mutate(LSeed = Seed) %>% select(-Seed)
+
+pred_results <- pred_results %>% mutate(game = row_number())
+pred_results$predicted_win <- ifelse(pred_results$prob1 >= .5,1,0)
+
+return(pred_results)
+}
+
+seedCleaning <- function(data){
+data$WSeed <- substrRight(data$WSeed, 2)
+data$WSeed <- str_replace(data$WSeed, 'a','')
+data$WSeed <- str_replace(data$WSeed, 'b','')
+data$WSeed <- str_remove(data$WSeed, "^0+")
+data$WSeed <- as.numeric(data$WSeed)
+
+
+data$LSeed <- substrRight(data$LSeed, 2)
+data$LSeed <- str_replace(data$LSeed, 'a','')
+data$LSeed <- str_replace(data$LSeed, 'b','')
+data$LSeed <- str_remove(data$LSeed, "^0+")
+data$LSeed <- as.numeric(data$LSeed)
+
+
+
+data$MinSeed <- apply(data[,c(8:9)], 1, min, na.rm = TRUE)
+data$MaxSeed <- apply(data[,c(8:9)], 1, max, na.rm = TRUE)
+
+data$matchup <- paste(data$MinSeed,', ',data$MaxSeed,sep='')
+
+return(data)
+}

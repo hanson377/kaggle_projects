@@ -211,8 +211,6 @@ instance, although the model was wrong with regards to total 2PT FGs
 made, it did successfully predict the binary outcome of one team having
 more 2 PT FGs. That alone is pretty cool.
 
-    ## [1] 0.06060606
-
 ![](bayes_pointed_scored_files/figure-gfm/look%20at%20ku%20dist-1.png)<!-- -->
 
 The same exercise is carried out for every type of FG (2 PT, 3 PT, and 1
@@ -325,11 +323,6 @@ what you might expect from randomly choosing results.
 
     ## `summarise()` ungrouping output (override with `.groups` argument)
 
-    ## Warning in min(x, na.rm = na.rm): no non-missing arguments to min; returning Inf
-
-    ## Warning in max(x, na.rm = na.rm): no non-missing arguments to max; returning -
-    ## Inf
-
 ![](bayes_pointed_scored_files/figure-gfm/summary%20by%20seed%20spread-1.png)<!-- -->
 
 Additionally, the model doesn’t often grossly underestimate a team’s
@@ -338,3 +331,40 @@ probability estimates for the winning teams are above 50% with very few
 (&lt;13%) below 25%.
 
 ![](bayes_pointed_scored_files/figure-gfm/yes-1.png)<!-- -->
+
+------------------------------------------------------------------------
+
+## **Optimization Attempts**
+
+------------------------------------------------------------------------
+
+It could be the case that defense is being overweighted in our model. To
+test this, we could weight the influence of a team’s offensive
+performance more than that of the defensive performance, implying we
+think a team’s historical offensive performance is a slightly better
+predictor than their defensive performance. We could then compare the
+successful prediction rates across a set of different weightings.
+
+This exercise was performed and it was found to be very true. This
+model’s prediction power is optimized near a weighting of \~35%, where
+prediction accuracy settles around 80-83%. This is a tremendous
+improvement of the previous model, which saw success rates \~67%.
+
+![](bayes_pointed_scored_files/figure-gfm/run%20loop%20to%20find%20optimal%20weighting-1.png)<!-- -->
+
+Predictions rates across our different seed spreads are, as expected,
+also greatly improved. We have an 80% accuracy for any games involving
+seed spreads between -15 and -1. For games with a spread of 0, we have
+an accuracy of 70%, which seems very good for games that most would
+consider a coin-toss. For upsets (seed spreads between 1 and 8), we have
+success rates above 50%.
+
+![](bayes_pointed_scored_files/figure-gfm/summary%20by%20seed%20spread%202-1.png)<!-- -->
+
+Although more research is needed, this drastic improvement might be
+explained by a few interesting anecdotals. One great example is the
+Davidson vs Wisconsin matchup from 2008 that we described earlier.
+Although our old model gave Wisconsin a slight advantage, our new model
+gives Davidson a far greater probability of winning. Our new model would
+have given Davidson a 90% chance of victory compared to the previous
+estimate of 48%.

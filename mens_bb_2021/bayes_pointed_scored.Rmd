@@ -280,56 +280,10 @@ prob <- sum(simulations$PointDiff >= 0)/nrow(simulations)
 In order to test the true performance of this model, I can take 1000 random games from previous tournaments and compare my prediction to the actual observed result.  
 
 ```{r generate preds, echo = FALSE, warning = FALSE, message = FALSE}
-game_list <- tourney %>% sample_n(1000,replace=FALSE)
+pred_results <- makePreds(500,10000,0)
+pred_results <- seedCleaning(pred_results)
 
-game_list <- unique(game_list$game)
-
-results <- data.frame(game = NA, prob1 = NA, prob2 = NA)
-
-for (i in game_list) {
-
- game <- subset(tourney, game == i)
- model <- ModelGen(game)
-
- prob1 <- sum(model$WPoints >= model$LPoints)/500000
- prob2 <- sum(model$WDiff >= model$LDiff)/500000
-
- temp <- data.frame(game=i,prob1,prob2)
-
- results <- rbind(temp,results)
-
-}
-results <- subset(results,is.na(prob1) == FALSE)
-
-pred_results <- tourney %>% inner_join(results,by='game') %>% select(Season,WTeamName,LTeamName,WTeamID,LTeamID,prob1,prob2)
-pred_results <- pred_results %>% left_join(seeds,by=c('WTeamID' = 'TeamID', 'Season' = 'Season')) %>% mutate(WSeed = Seed) %>% select(-Seed)
-pred_results <- pred_results %>% left_join(seeds,by=c('LTeamID' = 'TeamID', 'Season' = 'Season')) %>% mutate(LSeed = Seed) %>% select(-Seed)
-
-pred_results <- pred_results %>% mutate(game = row_number())
-pred_results$predicted_win <- ifelse(pred_results$prob1 >= .5,1,0)
 ```
-
-```{r format seeds, echo = FALSE}
-pred_results$WSeed <- substrRight(pred_results$WSeed, 2)
-pred_results$WSeed <- str_replace(pred_results$WSeed, 'a','')
-pred_results$WSeed <- str_replace(pred_results$WSeed, 'b','')
-pred_results$WSeed <- str_remove(pred_results$WSeed, "^0+")
-pred_results$WSeed <- as.numeric(pred_results$WSeed)
-
-
-pred_results$LSeed <- substrRight(pred_results$LSeed, 2)
-pred_results$LSeed <- str_replace(pred_results$LSeed, 'a','')
-pred_results$LSeed <- str_replace(pred_results$LSeed, 'b','')
-pred_results$LSeed <- str_remove(pred_results$LSeed, "^0+")
-pred_results$LSeed <- as.numeric(pred_results$LSeed)
-
-
-
-pred_results$MinSeed <- apply(pred_results[,c(8:9)], 1, min, na.rm = TRUE)
-pred_results$MaxSeed <- apply(pred_results[,c(8:9)], 1, max, na.rm = TRUE)
-
-pred_results$matchup <- paste(pred_results$MinSeed,', ',pred_results$MaxSeed,sep='')
-```  
 
 Our model successfully predicted the outcome of a game nearly 67% of the time.  Although not perfect, this isn't too shabby and is a bit above what you might expect from randomly choosing results.  
 
@@ -338,8 +292,8 @@ pred_results$seed_spread <- pred_results$WSeed-pred_results$LSeed
 summary_by_matchup <- pred_results %>% group_by(seed_spread) %>% summarise(obs = n_distinct(game), correct = n_distinct(game[predicted_win==1])) %>% mutate(success_rate = correct/obs)
 
 
-xrng <- range(pred_results$seed_spread)
-yrng <- range(pred_results$success_rate)
+xrng <- range(summary_by_matchup$seed_spread)
+yrng <- range(summary_by_matchup$success_rate)
 
 caption <- paste('negative spread value implies higher seed defeating lower seed')
 
@@ -400,4 +354,72 @@ sample <- sample %>% select(ID,Pred=prob)
 
 write.csv(sample,'/Users/hanson377/Documents/GitHub/kaggle_projects/mens_bb_2021/data/test_results.csv', row.names=FALSE)
 
+```  
+
+
+* * *  
+
+## **Optimization Attempts**
+
+* * *   
+
+
+It could be the case that defense is being overweighted in our model.  To test this, we could weight the influence of a team's offensive performance more than that of the defensive performance, implying we think a team's historical offensive performance is a slightly better predictor than their defensive performance.  We could then compare the successful prediction rates across a set of different weightings.  
+
+This exercise was performed and it was found to be very true.  This model's prediction power is optimized near a weighting of ~35%, where prediction accuracy settles around 80-83%.  This is a tremendous improvement of the previous model, which saw success rates ~67%.   
+
+
+```{r run loop to find optimal weighting, echo = FALSE, warning = FALSE}
+list <- seq(-.2,.5,.1)
+
+results <- NA
+
+for (i in list) {
+
+avg <- makePreds(500,10000,i)
+avg <- mean(avg$predicted_win)
+share <- i
+
+temp <- data.frame(avg,share)
+results <- rbind(temp,results)
+}
+results <- subset(results,is.na(avg) == FALSE)
+
+ggplot(results,aes(x=share,y=avg)) + geom_line() + ylab('Rate of Correct Predictions') + xlab('Weight Applied to Scoring Hyperparameters') + scale_y_continuous(label=scales::percent) + scale_x_continuous(label=scales::percent) + ggtitle('Results of Weighting Experiment: Accuracy as a Function of Weighting')
+```
+
+```{r GEN OPTIMAL MODEL, echo = FALSE}
+w35 <- makePreds(1000,10000,.35)
+w35 <- seedCleaning(w35)
+```
+
+Predictions rates across our different seed spreads are, as expected, also greatly improved.  We have an 80% accuracy for any games involving seed spreads between -15 and -1.  For games with a spread of 0, we have an accuracy of 70%, which seems very good for games that most would consider a coin-toss.  For upsets (seed spreads between 1 and 8), we have success rates above 50%.  
+
+```{r summary by seed spread 2, echo = FALSE, warnings = FALSE, message = FALSE}
+w35$seed_spread <- w35$WSeed-w35$LSeed
+summary_by_matchup <- w35 %>% group_by(seed_spread) %>% summarise(obs = n_distinct(game), correct = n_distinct(game[predicted_win==1])) %>% mutate(success_rate = correct/obs)
+
+
+xrng <- range(summary_by_matchup$seed_spread)
+yrng <- range(summary_by_matchup$success_rate)
+
+caption <- paste('negative spread value implies higher seed defeating lower seed')
+
+summary_by_matchup %>% filter(obs >= 15) %>% ggplot(aes(x=seed_spread,y=success_rate,colour=factor(seed_spread))) + geom_point(aes(size=obs),alpha=.5) + theme(legend.position='none',legend.text=element_blank()) + ylab('Rate of Correct Predictions') + xlab('Seed Spread') + scale_y_continuous(label=scales::percent) + annotate("text", x = xrng[1], y = yrng[2], label = caption,vjust = -2,hjust = -.025) + geom_hline(yintercept=.5,linetype='dashed',colour='red') + ggtitle('Correct Prediction Rates by Spread of Seeds in Tourney')
+```   
+
+Although more research is needed, this drastic improvement might be explained by a few interesting anecdotals.  One great example is the Davidson vs Wisconsin matchup from 2008 that we described earlier.  Although our old model gave Wisconsin a slight advantage, our new model gives Davidson a far greater probability of winning.  Our new model would have given Davidson a 90% chance of victory compared to the previous estimate of 48%.  
+
+```{r weight stuff toward offense, include = FALSE}
+model35 <- modelTest('Davidson','Wisconsin','2008',.35)
+prob1 <- sum(model35$diff >= 0)/500000
+
+model <- modelTest('Davidson','Wisconsin','2008',0)
+prob2 <- sum(model$diff >= 0)/500000
+
+
+view1 <- ggplot(model,aes(x=diff)) + geom_histogram(binwidth=1) + coord_cartesian(xlim=c(-10,10)) + xlab('Difference in Points') + ylab('') + xlab('') + geom_vline(xintercept=0,linetype='dashed',colour='red') + ggtitle('Unweighted Model')
+view2 <- ggplot(model35,aes(x=diff)) + geom_histogram(binwidth=1) + coord_cartesian(xlim=c(-10,10)) + xlab('Difference in Points') + xlab('Total Point Spread in Favor of Davidson') + ylab('Total Volume of 50k Simulations') + geom_vline(xintercept=0,linetype='dashed',colour='red') + ggtitle('Model with 35% Weighted Added to Offensive Data')
+
+grid.arrange(view1,view2)
 ```
