@@ -368,3 +368,5 @@ Although our old model gave Wisconsin a slight advantage, our new model
 gives Davidson a far greater probability of winning. Our new model would
 have given Davidson a 90% chance of victory compared to the previous
 estimate of 48%.
+
+![](bayes_pointed_scored_files/figure-gfm/weight%20stuff%20toward%20offense-1.png)<!-- -->

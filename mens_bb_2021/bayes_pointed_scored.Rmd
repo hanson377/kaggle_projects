@@ -410,7 +410,7 @@ summary_by_matchup %>% filter(obs >= 15) %>% ggplot(aes(x=seed_spread,y=success_
 
 Although more research is needed, this drastic improvement might be explained by a few interesting anecdotals.  One great example is the Davidson vs Wisconsin matchup from 2008 that we described earlier.  Although our old model gave Wisconsin a slight advantage, our new model gives Davidson a far greater probability of winning.  Our new model would have given Davidson a 90% chance of victory compared to the previous estimate of 48%.  
 
-```{r weight stuff toward offense, include = FALSE}
+```{r weight stuff toward offense, echo = FALSE}
 model35 <- modelTest('Davidson','Wisconsin','2008',.35)
 prob1 <- sum(model35$diff >= 0)/500000
 
